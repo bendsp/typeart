@@ -65,7 +65,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         <label className="block text-sm font-medium text-gray-400">Zoom</label>
         <input
           type="range"
-          min="0.5"
+          min="0.1"
           max="3"
           step="0.1"
           value={zoom}
