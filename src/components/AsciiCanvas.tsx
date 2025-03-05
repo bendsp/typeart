@@ -79,7 +79,28 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({ image, size, useColor }) => {
   const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
     if (e.ctrlKey || e.metaKey) {
       e.preventDefault();
-      setScale((prev) => Math.max(0.5, Math.min(3, prev - e.deltaY * 0.01)));
+      const newScale = Math.max(0.5, Math.min(3, scale - e.deltaY * 0.01));
+
+      if (containerRef.current) {
+        const { scrollLeft, scrollTop, clientWidth, clientHeight } =
+          containerRef.current;
+        const centerX = scrollLeft + clientWidth / 2;
+        const centerY = scrollTop + clientHeight / 2;
+
+        setScale(newScale);
+
+        // Adjust scroll position to keep zoom centered
+        requestAnimationFrame(() => {
+          if (containerRef.current) {
+            containerRef.current.scrollLeft =
+              centerX * (newScale / scale) - clientWidth / 2;
+            containerRef.current.scrollTop =
+              centerY * (newScale / scale) - clientHeight / 2;
+          }
+        });
+      } else {
+        setScale(newScale);
+      }
     }
   };
 
@@ -100,13 +121,19 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({ image, size, useColor }) => {
     <div
       ref={containerRef}
       className="flex-1 flex items-center justify-center bg-gray-800 text-white p-4 overflow-auto"
-      style={{ touchAction: "none" }} // Enables pinch-zooming in component, disables it for the page
+      style={{
+        touchAction: "none",
+        width: "100%",
+        height: "100vh",
+        display: "flex",
+      }}
       onWheel={handleWheel}
     >
       <div
         style={{
           transform: `scale(${scale})`,
           transformOrigin: "center",
+          margin: "auto",
         }}
       >
         <canvas ref={canvasRef} />
