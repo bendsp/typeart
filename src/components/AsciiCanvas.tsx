@@ -32,8 +32,13 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     img.crossOrigin = "Anonymous";
     img.onload = () => {
       const aspectRatio = img.width / img.height;
-      const width = size * 2;
-      const height = Math.floor(width / aspectRatio);
+      const charWidth = 6;
+      const charHeight = 12;
+      const charAspectRatio = charWidth / charHeight;
+
+      let width = size;
+      let height = Math.floor((size / aspectRatio) * charAspectRatio); // Adjust height based on character aspect
+
       canvas.width = width;
       canvas.height = height;
       ctx.drawImage(img, 0, 0, width, height);
@@ -46,10 +51,11 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
       const outputCtx = outputCanvas.getContext("2d");
       if (!outputCtx) return;
 
-      outputCanvas.width = width * 6;
-      outputCanvas.height = height * 12;
+      outputCanvas.width = width * charWidth;
+      outputCanvas.height = height * charHeight;
+
       outputCtx.clearRect(0, 0, outputCanvas.width, outputCanvas.height);
-      outputCtx.font = "10px monospace";
+      outputCtx.font = `${charHeight}px monospace`;
       outputCtx.textBaseline = "top";
 
       for (let y = 0; y < height; y++) {
@@ -67,7 +73,7 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
           } else {
             outputCtx.fillStyle = "white";
           }
-          outputCtx.fillText(char, x * 6, y * 12);
+          outputCtx.fillText(char, x * charWidth, y * charHeight);
         }
       }
     };
