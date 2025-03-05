@@ -5,8 +5,6 @@ interface SettingsPanelProps {
   setImage: (image: string | null) => void;
   size: number;
   setSize: (size: number) => void;
-  zoom: number;
-  setZoom: (zoom: number) => void;
   useColor: boolean;
   setUseColor: (useColor: boolean) => void;
 }
@@ -15,8 +13,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   setImage,
   size,
   setSize,
-  zoom,
-  setZoom,
   useColor,
   setUseColor,
 }) => {
@@ -58,21 +54,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           className="w-full mt-1"
         />
         <p className="text-sm text-gray-400">{size}px</p>
-      </div>
-
-      {/* Zoom Slider */}
-      <div className="mt-4">
-        <label className="block text-sm font-medium text-gray-400">Zoom</label>
-        <input
-          type="range"
-          min="0.1"
-          max="3"
-          step="0.1"
-          value={zoom}
-          onChange={(e) => setZoom(Number(e.target.value))}
-          className="w-full mt-1"
-        />
-        <p className="text-sm text-gray-400">{zoom}x</p>
       </div>
 
       {/* Color Toggle */}

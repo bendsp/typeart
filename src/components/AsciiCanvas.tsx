@@ -1,20 +1,16 @@
 "use client";
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 
 interface AsciiCanvasProps {
   image: string | null;
   size: number;
-  zoom: number;
   useColor: boolean;
 }
 
-const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
-  image,
-  size,
-  zoom,
-  useColor,
-}) => {
+const AsciiCanvas: React.FC<AsciiCanvasProps> = ({ image, size, useColor }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [scale, setScale] = useState(1);
 
   useEffect(() => {
     if (image) {
@@ -32,12 +28,10 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     img.crossOrigin = "Anonymous";
     img.onload = () => {
       const aspectRatio = img.width / img.height;
-      const charWidth = 6;
-      const charHeight = 12;
-      const charAspectRatio = charWidth / charHeight;
+      const charAspectRatio = 6 / 12;
 
-      const width = size;
-      const height = Math.floor((size / aspectRatio) * charAspectRatio); // Adjust height based on character aspect
+      let width = size;
+      let height = Math.floor((size / aspectRatio) * charAspectRatio);
 
       canvas.width = width;
       canvas.height = height;
@@ -51,6 +45,8 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
       const outputCtx = outputCanvas.getContext("2d");
       if (!outputCtx) return;
 
+      const charWidth = 6;
+      const charHeight = 12;
       outputCanvas.width = width * charWidth;
       outputCanvas.height = height * charHeight;
 
@@ -79,12 +75,42 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     };
   };
 
+  // Handle zooming
+  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      setScale((prev) => Math.max(0.5, Math.min(3, prev - e.deltaY * 0.01)));
+    }
+  };
+
+  // Prevent native pinch zooming
+  useEffect(() => {
+    const preventNativeZoom = (e: WheelEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+      }
+    };
+    window.addEventListener("wheel", preventNativeZoom, { passive: false });
+    return () => {
+      window.removeEventListener("wheel", preventNativeZoom);
+    };
+  }, []);
+
   return (
-    <div className="flex-1 flex items-center justify-center bg-gray-800 text-white p-4 overflow-auto">
-      <canvas
-        ref={canvasRef}
-        style={{ transform: `scale(${zoom})`, transformOrigin: "center" }}
-      />
+    <div
+      ref={containerRef}
+      className="flex-1 flex items-center justify-center bg-gray-800 text-white p-4 overflow-auto"
+      style={{ touchAction: "none" }} // Enables pinch-zooming in component, disables it for the page
+      onWheel={handleWheel}
+    >
+      <div
+        style={{
+          transform: `scale(${scale})`,
+          transformOrigin: "center",
+        }}
+      >
+        <canvas ref={canvasRef} />
+      </div>
     </div>
   );
 };
