@@ -36,8 +36,8 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
       const charHeight = 12;
       const charAspectRatio = charWidth / charHeight;
 
-      let width = size;
-      let height = Math.floor((size / aspectRatio) * charAspectRatio); // Adjust height based on character aspect
+      const width = size;
+      const height = Math.floor((size / aspectRatio) * charAspectRatio); // Adjust height based on character aspect
 
       canvas.width = width;
       canvas.height = height;
