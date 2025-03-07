@@ -9,7 +9,7 @@ export default function Home() {
   const [useColor, setUseColor] = useState<boolean>(true);
 
   return (
-    <div className="flex h-screen">
+    <div className="flex h-screen" style={{ overscrollBehavior: "none" }}>
       {/* Left Panel (Settings) */}
       <SettingsPanel
         setImage={setImage}

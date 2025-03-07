@@ -11,6 +11,9 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({ image, size, useColor }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [scale, setScale] = useState(1);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
+  const lastMousePos = useRef({ x: 0, y: 0 });
 
   useEffect(() => {
     if (image) {
@@ -75,69 +78,101 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({ image, size, useColor }) => {
     };
   };
 
-  // Handle zooming
+  // Handle zooming from cursor
   const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
     if (e.ctrlKey || e.metaKey) {
+      // Zoom branch
       e.preventDefault();
+      if (!containerRef.current || !canvasRef.current) return;
+
+      const containerRect = containerRef.current.getBoundingClientRect();
+      // Use the intrinsic canvas dimensions (set during ascii conversion)
+      const canvasIntrinsicWidth = canvasRef.current.width;
+      const canvasIntrinsicHeight = canvasRef.current.height;
+      // Compute the canvas's untransformed centered position within the container
+      const centeredX = (containerRect.width - canvasIntrinsicWidth) / 2;
+      const centeredY = (containerRect.height - canvasIntrinsicHeight) / 2;
+
+      // Compute the cursor's position relative to the canvas's original top-left (before transform)
+      const localCursorX =
+        e.clientX - containerRect.left - centeredX - offset.x;
+      const localCursorY = e.clientY - containerRect.top - centeredY - offset.y;
+
       const newScale = Math.max(0.5, Math.min(3, scale - e.deltaY * 0.01));
 
-      if (containerRef.current) {
-        const { scrollLeft, scrollTop, clientWidth, clientHeight } =
-          containerRef.current;
-        const centerX = scrollLeft + clientWidth / 2;
-        const centerY = scrollTop + clientHeight / 2;
+      // Adjust offset so that the point under the cursor remains fixed
+      setOffset({
+        x: offset.x + (1 - newScale / scale) * localCursorX,
+        y: offset.y + (1 - newScale / scale) * localCursorY,
+      });
 
-        setScale(newScale);
-
-        // Adjust scroll position to keep zoom centered
-        requestAnimationFrame(() => {
-          if (containerRef.current) {
-            containerRef.current.scrollLeft =
-              centerX * (newScale / scale) - clientWidth / 2;
-            containerRef.current.scrollTop =
-              centerY * (newScale / scale) - clientHeight / 2;
-          }
-        });
-      } else {
-        setScale(newScale);
-      }
+      setScale(newScale);
+    } else {
+      // Two-finger panning
+      e.preventDefault();
+      setOffset((prev) => ({
+        x: prev.x - e.deltaX,
+        y: prev.y - e.deltaY,
+      }));
     }
   };
 
-  // Prevent native pinch zooming
+  // Handle panning
+  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    setIsPanning(true);
+    lastMousePos.current = { x: e.clientX, y: e.clientY };
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!isPanning) return;
+    const dx = e.clientX - lastMousePos.current.x;
+    const dy = e.clientY - lastMousePos.current.y;
+    setOffset((prev) => ({ x: prev.x + dx, y: prev.y + dy }));
+    lastMousePos.current = { x: e.clientX, y: e.clientY };
+  };
+
+  const handleMouseUp = () => {
+    setIsPanning(false);
+  };
+
   useEffect(() => {
-    const preventNativeZoom = (e: WheelEvent) => {
+    const container = containerRef.current;
+    if (!container) return;
+    const handleNativeWheel = (e: WheelEvent) => {
       if (e.ctrlKey || e.metaKey) {
         e.preventDefault();
       }
     };
-    window.addEventListener("wheel", preventNativeZoom, { passive: false });
+    container.addEventListener("wheel", handleNativeWheel, { passive: false });
     return () => {
-      window.removeEventListener("wheel", preventNativeZoom);
+      container.removeEventListener("wheel", handleNativeWheel);
     };
   }, []);
 
   return (
     <div
       ref={containerRef}
-      className="flex-1 flex items-center justify-center bg-gray-800 text-white p-4 overflow-auto"
+      className="flex-1 flex items-center justify-center bg-gray-800 text-white p-8 overflow-hidden"
       style={{
         touchAction: "none",
         width: "100%",
         height: "100vh",
         display: "flex",
+        cursor: isPanning ? "grabbing" : "grab",
       }}
       onWheel={handleWheel}
+      onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseUp}
     >
-      <div
+      <canvas
+        ref={canvasRef}
         style={{
-          transform: `scale(${scale})`,
-          transformOrigin: "center",
-          margin: "auto",
+          transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
+          transformOrigin: "top left",
         }}
-      >
-        <canvas ref={canvasRef} />
-      </div>
+      />
     </div>
   );
 };
