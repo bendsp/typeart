@@ -7,6 +7,12 @@ const CHAR_ASPECT_RATIO = CHAR_WIDTH / CHAR_HEIGHT;
 const ASCII_CHARS =
   "$@B%8&WM#*oahkbdpqwmZO0QLCJUYXzcvunxrjft/|()1{}[]?-_+~<>i!lI;:,\"^`'. ";
 
+interface AsciiCanvasProps {
+  image: string | null;
+  size: number;
+  useColor: boolean;
+}
+
 // Convert image to ASCII art and render on the canvas
 const drawAscii = (
   image: HTMLImageElement,
@@ -87,7 +93,7 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({ image, size, useColor }) => {
       const localCursorX =
         e.clientX - containerRect.left - centeredX - offset.x;
       const localCursorY = e.clientY - containerRect.top - centeredY - offset.y;
-      const newScale = Math.max(0.5, Math.min(3, scale - e.deltaY * 0.01));
+      const newScale = Math.max(0.1, Math.min(5, scale - e.deltaY * 0.01));
       setOffset({
         x: offset.x + (1 - newScale / scale) * localCursorX,
         y: offset.y + (1 - newScale / scale) * localCursorY,
