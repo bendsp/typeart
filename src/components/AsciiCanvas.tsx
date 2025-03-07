@@ -1,12 +1,56 @@
 "use client";
 import React, { useEffect, useRef, useState } from "react";
 
-interface AsciiCanvasProps {
-  image: string | null;
-  size: number;
-  useColor: boolean;
-}
+const CHAR_WIDTH = 6;
+const CHAR_HEIGHT = 12;
+const CHAR_ASPECT_RATIO = CHAR_WIDTH / CHAR_HEIGHT;
+const ASCII_CHARS =
+  "$@B%8&WM#*oahkbdpqwmZO0QLCJUYXzcvunxrjft/|()1{}[]?-_+~<>i!lI;:,\"^`'. ";
 
+// Convert image to ASCII art and render on the canvas
+const drawAscii = (
+  image: HTMLImageElement,
+  size: number,
+  useColor: boolean,
+  outputCanvas: HTMLCanvasElement
+) => {
+  const aspectRatio = image.width / image.height;
+  const width = size;
+  const height = Math.floor((size / aspectRatio) * CHAR_ASPECT_RATIO);
+
+  const tempCanvas = document.createElement("canvas");
+  const ctx = tempCanvas.getContext("2d");
+  if (!ctx) return;
+  tempCanvas.width = width;
+  tempCanvas.height = height;
+  ctx.drawImage(image, 0, 0, width, height);
+  const imageData = ctx.getImageData(0, 0, width, height).data;
+  outputCanvas.width = width * CHAR_WIDTH;
+  outputCanvas.height = height * CHAR_HEIGHT;
+  const outputCtx = outputCanvas.getContext("2d");
+  if (!outputCtx) return;
+  outputCtx.clearRect(0, 0, outputCanvas.width, outputCanvas.height);
+  outputCtx.font = `${CHAR_HEIGHT}px monospace`;
+  outputCtx.textBaseline = "top";
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = (y * width + x) * 4;
+      const r = imageData[idx],
+        g = imageData[idx + 1],
+        b = imageData[idx + 2];
+      const brightness = 0.299 * r + 0.587 * g + 0.114 * b;
+      const charIndex = Math.floor(
+        (brightness / 255) * (ASCII_CHARS.length - 1)
+      );
+      const char = ASCII_CHARS[charIndex];
+      outputCtx.fillStyle = useColor ? `rgb(${r}, ${g}, ${b})` : "white";
+      outputCtx.fillText(char, x * CHAR_WIDTH, y * CHAR_HEIGHT);
+    }
+  }
+};
+
+// AsciiCanvas component renders ASCII art from an image and supports zoom & pan
 const AsciiCanvas: React.FC<AsciiCanvasProps> = ({ image, size, useColor }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -15,100 +59,41 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({ image, size, useColor }) => {
   const [isPanning, setIsPanning] = useState(false);
   const lastMousePos = useRef({ x: 0, y: 0 });
 
+  // Load image and render ASCII art
   useEffect(() => {
     if (image) {
-      requestAnimationFrame(() => convertImageToAscii(image));
+      requestAnimationFrame(() => {
+        const img = new Image();
+        img.src = image;
+        img.crossOrigin = "Anonymous";
+        img.onload = () => {
+          if (canvasRef.current)
+            drawAscii(img, size, useColor, canvasRef.current);
+        };
+      });
     }
   }, [image, size, useColor]);
 
-  const convertImageToAscii = async (imageSrc: string) => {
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    const img = new Image();
-    img.src = imageSrc;
-    img.crossOrigin = "Anonymous";
-    img.onload = () => {
-      const aspectRatio = img.width / img.height;
-      const charAspectRatio = 6 / 12;
-
-      let width = size;
-      let height = Math.floor((size / aspectRatio) * charAspectRatio);
-
-      canvas.width = width;
-      canvas.height = height;
-      ctx.drawImage(img, 0, 0, width, height);
-
-      const imageData = ctx.getImageData(0, 0, width, height).data;
-      const chars =
-        "$@B%8&WM#*oahkbdpqwmZO0QLCJUYXzcvunxrjft/|()1{}[]?-_+~<>i!lI;:,\"^`'. ";
-      const outputCanvas = canvasRef.current;
-      if (!outputCanvas) return;
-      const outputCtx = outputCanvas.getContext("2d");
-      if (!outputCtx) return;
-
-      const charWidth = 6;
-      const charHeight = 12;
-      outputCanvas.width = width * charWidth;
-      outputCanvas.height = height * charHeight;
-
-      outputCtx.clearRect(0, 0, outputCanvas.width, outputCanvas.height);
-      outputCtx.font = `${charHeight}px monospace`;
-      outputCtx.textBaseline = "top";
-
-      for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-          const idx = (y * width + x) * 4;
-          const r = imageData[idx];
-          const g = imageData[idx + 1];
-          const b = imageData[idx + 2];
-          const brightness = 0.299 * r + 0.587 * g + 0.114 * b;
-          const charIndex = Math.floor((brightness / 255) * (chars.length - 1));
-          const char = chars[charIndex];
-
-          if (useColor) {
-            outputCtx.fillStyle = `rgb(${r}, ${g}, ${b})`;
-          } else {
-            outputCtx.fillStyle = "white";
-          }
-          outputCtx.fillText(char, x * charWidth, y * charHeight);
-        }
-      }
-    };
-  };
-
-  // Handle zooming from cursor
+  // Handle zoom and pan on wheel event
   const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
     if (e.ctrlKey || e.metaKey) {
-      // Zoom branch
       e.preventDefault();
       if (!containerRef.current || !canvasRef.current) return;
-
       const containerRect = containerRef.current.getBoundingClientRect();
-      // Use the intrinsic canvas dimensions (set during ascii conversion)
       const canvasIntrinsicWidth = canvasRef.current.width;
       const canvasIntrinsicHeight = canvasRef.current.height;
-      // Compute the canvas's untransformed centered position within the container
       const centeredX = (containerRect.width - canvasIntrinsicWidth) / 2;
       const centeredY = (containerRect.height - canvasIntrinsicHeight) / 2;
-
-      // Compute the cursor's position relative to the canvas's original top-left (before transform)
       const localCursorX =
         e.clientX - containerRect.left - centeredX - offset.x;
       const localCursorY = e.clientY - containerRect.top - centeredY - offset.y;
-
       const newScale = Math.max(0.5, Math.min(3, scale - e.deltaY * 0.01));
-
-      // Adjust offset so that the point under the cursor remains fixed
       setOffset({
         x: offset.x + (1 - newScale / scale) * localCursorX,
         y: offset.y + (1 - newScale / scale) * localCursorY,
       });
-
       setScale(newScale);
     } else {
-      // Two-finger panning
       e.preventDefault();
       setOffset((prev) => ({
         x: prev.x - e.deltaX,
@@ -117,12 +102,13 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({ image, size, useColor }) => {
     }
   };
 
-  // Handle panning
+  // Start panning on mouse down
   const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     setIsPanning(true);
     lastMousePos.current = { x: e.clientX, y: e.clientY };
   };
 
+  // Handle panning movement on mouse move
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!isPanning) return;
     const dx = e.clientX - lastMousePos.current.x;
@@ -131,22 +117,18 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({ image, size, useColor }) => {
     lastMousePos.current = { x: e.clientX, y: e.clientY };
   };
 
-  const handleMouseUp = () => {
-    setIsPanning(false);
-  };
+  // End panning on mouse up
+  const handleMouseUp = () => setIsPanning(false);
 
+  // Prevent native zoom on container wheel event
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
     const handleNativeWheel = (e: WheelEvent) => {
-      if (e.ctrlKey || e.metaKey) {
-        e.preventDefault();
-      }
+      if (e.ctrlKey || e.metaKey) e.preventDefault();
     };
     container.addEventListener("wheel", handleNativeWheel, { passive: false });
-    return () => {
-      container.removeEventListener("wheel", handleNativeWheel);
-    };
+    return () => container.removeEventListener("wheel", handleNativeWheel);
   }, []);
 
   return (
