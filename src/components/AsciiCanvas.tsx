@@ -151,7 +151,7 @@ const drawAscii = (
 // AsciiCanvas component renders ASCII art from an image and supports zoom & pan
 const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
   initialImage = null,
-  initialSize = 150,
+  initialSize = 200,
   initialUseColor = true,
   initialCharacterSet = "default",
   onError,
@@ -187,6 +187,9 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     () => ASCII_PRESETS[characterSet] || DEFAULT_ASCII_CHARS,
     [characterSet]
   );
+
+  // Add a ref for the main container to manage focus
+  const mainContainerRef = useRef<HTMLDivElement | null>(null);
 
   // Check if canvas is larger than viewport and calculate canPan without directly setting state
   const checkCanPan = useCallback(() => {
@@ -626,19 +629,55 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     }));
   }, []);
 
-  // Toggle controls visibility
-  const toggleControls = useCallback(() => {
+  // Helper function to return focus to the canvas container
+  const returnFocusToCanvas = useCallback(() => {
+    if (viewportRef.current) {
+      viewportRef.current.focus();
+    }
+  }, []);
+
+  // Wrap all control handlers to return focus to canvas
+  const handleControlClick = useCallback(
+    (callback: () => void) => {
+      return (e: React.MouseEvent) => {
+        // Prevent default to avoid losing focus
+        e.preventDefault();
+        // Execute the original callback
+        callback();
+        // Return focus to canvas
+        setTimeout(returnFocusToCanvas, 0);
+      };
+    },
+    [returnFocusToCanvas]
+  );
+
+  // Special handler for file input label that doesn't prevent default
+  const handleFileInputClick = useCallback(() => {
+    // Only schedule focus return, but don't prevent default behavior
+    setTimeout(returnFocusToCanvas, 100); // Slightly longer timeout to allow file dialog to open
+  }, [returnFocusToCanvas]);
+
+  // Modified toggle controls to maintain focus
+  const toggleControlsWithFocus = useCallback(() => {
     setControlsExpanded((prev) => !prev);
+    setTimeout(returnFocusToCanvas, 0);
+  }, [returnFocusToCanvas]);
+
+  // Focus the canvas on mount
+  useEffect(() => {
+    if (viewportRef.current) {
+      viewportRef.current.focus();
+    }
   }, []);
 
   return (
-    <div className="flex flex-col h-full w-full">
-      {/* Minimized Control Bar */}
-      <div className="bg-gray-900 text-white p-2 flex items-center justify-between">
-        <div className="flex items-center space-x-2">
+    <div className="flex flex-col h-full w-full" ref={mainContainerRef}>
+      {/* Minimized Control Bar - Increased size */}
+      <div className="bg-gray-900 text-white py-3 px-4 flex items-center justify-between">
+        <div className="flex items-center space-x-3">
           <button
-            onClick={toggleControls}
-            className="bg-gray-700 hover:bg-gray-600 p-1.5 rounded"
+            onClick={handleControlClick(toggleControlsWithFocus)}
+            className="bg-gray-700 hover:bg-gray-600 p-2 rounded"
             aria-label={
               controlsExpanded ? "Collapse controls" : "Expand controls"
             }
@@ -646,35 +685,63 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
             {controlsExpanded ? "▲" : "▼"}
           </button>
 
-          <div className="flex items-center space-x-1">
+          <div className="flex items-center space-x-2">
             <button
-              onClick={resetView}
-              className="bg-gray-700 hover:bg-gray-600 p-1.5 rounded text-sm"
+              onClick={handleControlClick(resetView)}
+              className="bg-gray-700 hover:bg-gray-600 p-2 rounded text-sm"
               title="Reset View"
             >
               Reset
             </button>
 
-            <div className="flex items-center bg-gray-800 rounded px-1">
+            <div className="flex items-center bg-gray-800 rounded px-2 py-1">
               <button
-                onClick={() => handleZoom(false)}
+                onClick={handleControlClick(() => handleZoom(false))}
                 className="text-white p-0.5 text-lg font-bold hover:text-gray-300"
-                aria-label="Zoom out"
+                aria-label="Zoom out by 10%"
               >
                 −
               </button>
-              <span className="mx-1.5 text-sm w-12 text-center">
+              <span className="mx-2 text-sm w-12 text-center">
                 {Math.round(scale * 100)}%
               </span>
               <button
-                onClick={() => handleZoom(true)}
+                onClick={handleControlClick(() => handleZoom(true))}
                 className="text-white p-0.5 text-lg font-bold hover:text-gray-300"
-                aria-label="Zoom in"
+                aria-label="Zoom in by 10%"
               >
                 +
               </button>
             </div>
           </div>
+        </div>
+
+        {/* TypeArt Logo - Increased size */}
+        <div className="absolute left-1/2 transform -translate-x-1/2 flex items-center">
+          <div className="h-10 flex items-center">
+            <img
+              src="/typeArt-logo.png"
+              alt="TypeArt"
+              className="h-full object-contain"
+              onError={(e) => {
+                // Fallback if image doesn't load
+                const target = e.target as HTMLImageElement;
+                target.style.display = "none";
+                const parent = target.parentElement;
+                if (parent) {
+                  const textLogo = document.createElement("div");
+                  textLogo.className = "text-xl font-bold";
+                  textLogo.innerHTML =
+                    '<span class="text-green-400">t</span><span class="text-yellow-400">y</span><span class="text-red-400">p</span><span class="text-blue-400">e</span><span class="text-purple-400">A</span><span class="text-green-400">r</span><span class="text-yellow-400">t</span>';
+                  parent.appendChild(textLogo);
+                }
+              }}
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center space-x-2">
+          {/* Right side controls remain the same */}
         </div>
       </div>
 
@@ -688,11 +755,12 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
                 <label
                   htmlFor="imageUpload"
                   className="px-2 py-1 bg-blue-600 hover:bg-blue-700 cursor-pointer text-white rounded text-center text-xs flex-1"
+                  onClick={handleFileInputClick}
                 >
                   Upload Image
                 </label>
                 <button
-                  onClick={exportAsImage}
+                  onClick={handleControlClick(exportAsImage)}
                   className="px-2 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-xs flex-1"
                   title="Export as PNG"
                 >
@@ -702,7 +770,10 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
                   id="imageUpload"
                   type="file"
                   accept="image/*"
-                  onChange={handleImageUpload}
+                  onChange={(e) => {
+                    handleImageUpload(e);
+                    setTimeout(returnFocusToCanvas, 0);
+                  }}
                   className="hidden"
                 />
               </div>
@@ -712,10 +783,12 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
                 <label className="text-gray-400 text-xs w-16">Char Set:</label>
                 <select
                   value={characterSet}
-                  onChange={(e) =>
-                    setCharacterSet(e.target.value as CharacterSet)
-                  }
+                  onChange={(e) => {
+                    setCharacterSet(e.target.value as CharacterSet);
+                    setTimeout(returnFocusToCanvas, 0);
+                  }}
                   className="bg-gray-800 text-white rounded border border-gray-700 text-xs p-0.5 flex-1"
+                  onBlur={returnFocusToCanvas}
                 >
                   {Object.keys(ASCII_PRESETS).map((preset) => (
                     <option key={preset} value={preset}>
@@ -733,7 +806,7 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
                     className={`relative inline-block w-8 h-4 ${
                       useColor ? "bg-blue-600" : "bg-gray-600"
                     } rounded-full transition-colors cursor-pointer`}
-                    onClick={() => setUseColor(!useColor)}
+                    onClick={handleControlClick(() => setUseColor(!useColor))}
                   >
                     <span
                       className={`block w-3 h-3 mt-0.5 ${
@@ -749,7 +822,7 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
                     className={`relative inline-block w-8 h-4 ${
                       renderOptions.invert ? "bg-blue-600" : "bg-gray-600"
                     } rounded-full transition-colors cursor-pointer`}
-                    onClick={toggleInvert}
+                    onClick={handleControlClick(toggleInvert)}
                   >
                     <span
                       className={`block w-3 h-3 mt-0.5 ${
@@ -772,7 +845,12 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
                   max="500"
                   step="5"
                   value={size}
-                  onChange={(e) => setSize(Number(e.target.value))}
+                  onChange={(e) => {
+                    setSize(Number(e.target.value));
+                    // No need to return focus for sliders as they don't take focus
+                  }}
+                  onMouseUp={returnFocusToCanvas}
+                  onTouchEnd={returnFocusToCanvas}
                   className="flex-1 h-4"
                 />
                 <span className="text-gray-400 text-xs w-10">{size}</span>
@@ -791,6 +869,8 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
                   onChange={(e) =>
                     handleBrightnessChange(parseInt(e.target.value))
                   }
+                  onMouseUp={returnFocusToCanvas}
+                  onTouchEnd={returnFocusToCanvas}
                   className="flex-1 h-4"
                   aria-label="Adjust brightness"
                 />
@@ -810,6 +890,8 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
                   onChange={(e) =>
                     handleContrastChange(parseInt(e.target.value))
                   }
+                  onMouseUp={returnFocusToCanvas}
+                  onTouchEnd={returnFocusToCanvas}
                   className="flex-1 h-4"
                   aria-label="Adjust contrast"
                 />
@@ -825,7 +907,7 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
       {/* Main Canvas Container */}
       <div
         ref={viewportRef}
-        className="flex-1 bg-gray-800 text-white overflow-hidden relative"
+        className="flex-1 bg-gray-800 text-white overflow-hidden relative outline-none focus:outline-none focus:ring-0"
         style={{
           touchAction: "none",
           cursor:
@@ -888,6 +970,26 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
               transformOrigin: "center center",
             }}
           />
+        </div>
+
+        {/* Attribution box */}
+        <div className="absolute bottom-3 left-3 bg-black bg-opacity-70 text-white p-1.5 rounded text-xs">
+          <a
+            href="https://github.com/bendsp"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-white hover:text-blue-300 transition-colors flex items-center"
+          >
+            <span>Ben Desprets </span>
+            <svg
+              className="ml-1 w-3 h-3"
+              fill="currentColor"
+              viewBox="0 0 16 16"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
+            </svg>
+          </a>
         </div>
 
         {/* Keyboard instructions */}
