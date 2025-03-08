@@ -115,7 +115,7 @@ const drawAscii = (
   if (!outputCtx) return;
 
   outputCtx.clearRect(0, 0, outputCanvas.width, outputCanvas.height);
-  outputCtx.font = `${CHAR_HEIGHT}px monospace`;
+  outputCtx.font = `bold ${CHAR_HEIGHT}px monospace`;
   outputCtx.textBaseline = "top";
 
   for (let y = 0; y < height; y++) {
@@ -697,7 +697,7 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
             <div className="flex items-center bg-gray-800 rounded px-2 py-1">
               <button
                 onClick={handleControlClick(() => handleZoom(false))}
-                className="text-white p-0.5 text-lg font-bold hover:text-gray-300"
+                className="text-white p-0.5 text-lg hover:text-gray-300"
                 aria-label="Zoom out by 10%"
               >
                 −
@@ -707,7 +707,7 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
               </span>
               <button
                 onClick={handleControlClick(() => handleZoom(true))}
-                className="text-white p-0.5 text-lg font-bold hover:text-gray-300"
+                className="text-white p-0.5 text-lg hover:text-gray-300"
                 aria-label="Zoom in by 10%"
               >
                 +
@@ -730,7 +730,7 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
                 const parent = target.parentElement;
                 if (parent) {
                   const textLogo = document.createElement("div");
-                  textLogo.className = "text-xl font-bold";
+                  textLogo.className = "text-xl";
                   textLogo.innerHTML =
                     '<span class="text-green-400">t</span><span class="text-yellow-400">y</span><span class="text-red-400">p</span><span class="text-blue-400">e</span><span class="text-purple-400">A</span><span class="text-green-400">r</span><span class="text-yellow-400">t</span>';
                   parent.appendChild(textLogo);
@@ -947,8 +947,8 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
         {error && (
           <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 z-10">
             <div className="bg-red-600 text-white p-4 rounded-lg shadow-lg max-w-md">
-              <h3 className="text-lg font-bold mb-1">Error</h3>
-              <p>{error}</p>
+              <h3 className="text-lg mb-1">Error</h3>
+              <p className="font-medium">{error}</p>
               <button
                 onClick={() => setError(null)}
                 className="mt-2 px-3 py-1 bg-white text-red-600 rounded hover:bg-gray-100"
