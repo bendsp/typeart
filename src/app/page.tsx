@@ -8,7 +8,7 @@ export default function Home() {
       className="flex flex-col h-screen"
       style={{ overscrollBehavior: "none" }}
     >
-      <AsciiCanvas initialSize={200} initialUseColor={true} />
+      <AsciiCanvas initialSize={300} initialUseColor={true} />
     </div>
   );
 }

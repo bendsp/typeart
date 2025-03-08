@@ -74,28 +74,30 @@ const drawAscii = (
   ctx.drawImage(image, 0, 0, width, height);
 
   // Apply contrast and brightness adjustments
-  if (options.contrast !== 0 || options.brightness !== 0) {
+  if (options.contrast !== 0 || options.brightness !== 0 || options.invert) {
     const imageData = ctx.getImageData(0, 0, width, height);
     const data = imageData.data;
     const factor =
       (259 * (options.contrast + 255)) / (255 * (259 - options.contrast));
 
     for (let i = 0; i < data.length; i += 4) {
-      // Apply contrast
-      data[i] = Math.max(
-        0,
-        Math.min(255, factor * (data[i] - 128) + 128 + options.brightness)
-      );
-      data[i + 1] = Math.max(
-        0,
-        Math.min(255, factor * (data[i + 1] - 128) + 128 + options.brightness)
-      );
-      data[i + 2] = Math.max(
-        0,
-        Math.min(255, factor * (data[i + 2] - 128) + 128 + options.brightness)
-      );
+      if (options.contrast !== 0 || options.brightness !== 0) {
+        // Apply contrast and brightness
+        data[i] = Math.max(
+          0,
+          Math.min(255, factor * (data[i] - 128) + 128 + options.brightness)
+        );
+        data[i + 1] = Math.max(
+          0,
+          Math.min(255, factor * (data[i + 1] - 128) + 128 + options.brightness)
+        );
+        data[i + 2] = Math.max(
+          0,
+          Math.min(255, factor * (data[i + 2] - 128) + 128 + options.brightness)
+        );
+      }
 
-      // Apply invert if needed
+      // Apply invert if needed (make sure it works regardless of brightness/contrast)
       if (options.invert) {
         data[i] = 255 - data[i];
         data[i + 1] = 255 - data[i + 1];
@@ -162,15 +164,18 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     useState<CharacterSet>(initialCharacterSet);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const containerRef = useRef<HTMLDivElement | null>(null);
+  const viewportRef = useRef<HTMLDivElement | null>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
+
   const [scale, setScale] = useState(1);
-  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
+  const [canPan, setCanPan] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [controlsExpanded, setControlsExpanded] = useState(true);
-  const lastMousePos = useRef({ x: 0, y: 0 });
+  const lastPanPosition = useRef({ x: 0, y: 0 });
+
   const [renderOptions, setRenderOptions] = useState<AsciiRenderOptions>({
     brightness: 0,
     contrast: 0,
@@ -183,10 +188,26 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     [characterSet]
   );
 
+  // Check if canvas is larger than viewport and calculate canPan without directly setting state
+  const checkCanPan = useCallback(() => {
+    if (!canvasRef.current || !viewportRef.current) return false;
+
+    const canvas = canvasRef.current;
+    const viewport = viewportRef.current;
+
+    // Calculate if the scaled canvas is larger than the viewport
+    const scaledWidth = canvas.width * scale;
+    const scaledHeight = canvas.height * scale;
+    const viewportWidth = viewport.clientWidth;
+    const viewportHeight = viewport.clientHeight;
+
+    return scaledWidth > viewportWidth || scaledHeight > viewportHeight;
+  }, [scale]);
+
   // Reset view to original position and scale
   const resetView = useCallback(() => {
     setScale(1);
-    setOffset({ x: 0, y: 0 });
+    setPanOffset({ x: 0, y: 0 });
   }, []);
 
   // Handle image upload
@@ -324,135 +345,186 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     }
   }, [renderOptions, renderAsciiArt]);
 
-  // Debounced zoom handler for better performance
-  const debouncedZoom = useCallback(
-    debounce((newScale: number, cursorX: number, cursorY: number) => {
-      setOffset((prev) => ({
-        x: prev.x + (1 - newScale / scale) * cursorX,
-        y: prev.y + (1 - newScale / scale) * cursorY,
-      }));
+  // Calculate constrained pan values without directly setting state
+  const getConstrainedPan = useCallback(
+    (panX: number, panY: number) => {
+      if (!canvasRef.current || !viewportRef.current || !canPan) {
+        return { x: panX, y: panY };
+      }
+
+      const canvas = canvasRef.current;
+      const viewport = viewportRef.current;
+
+      const scaledWidth = canvas.width * scale;
+      const scaledHeight = canvas.height * scale;
+      const viewportWidth = viewport.clientWidth;
+      const viewportHeight = viewport.clientHeight;
+
+      // Calculate maximum allowed pan in each direction
+      // This keeps at least 20% of the canvas visible
+      const maxPanX = (scaledWidth - viewportWidth) / 2 + scaledWidth * 0.2;
+      const maxPanY = (scaledHeight - viewportHeight) / 2 + scaledHeight * 0.2;
+
+      return {
+        x: Math.max(-maxPanX, Math.min(maxPanX, panX)),
+        y: Math.max(-maxPanY, Math.min(maxPanY, panY)),
+      };
+    },
+    [canPan, scale]
+  );
+
+  // Combined effect to update canPan and constrain offsets when needed
+  useEffect(() => {
+    // Skip if refs aren't ready yet
+    if (!canvasRef.current || !viewportRef.current) return;
+
+    // Check if we can pan
+    const shouldCanPan = checkCanPan();
+
+    // Only update if there's a change to avoid re-render loops
+    if (shouldCanPan !== canPan) {
+      setCanPan(shouldCanPan);
+    }
+
+    // If we can't pan, reset offset to center
+    if (!shouldCanPan && (panOffset.x !== 0 || panOffset.y !== 0)) {
+      setPanOffset({ x: 0, y: 0 });
+    }
+    // If we can pan, ensure we're within constraints
+    else if (shouldCanPan) {
+      const constrained = getConstrainedPan(panOffset.x, panOffset.y);
+      if (constrained.x !== panOffset.x || constrained.y !== panOffset.y) {
+        setPanOffset(constrained);
+      }
+    }
+  }, [scale, panOffset, canPan, checkCanPan, getConstrainedPan]);
+
+  // Simple zoom functionality - now with fixed 10 percentage point change
+  const handleZoom = useCallback(
+    (zoomIn: boolean) => {
+      // Change by exactly 10 percentage points (0.1 absolute change)
+      const zoomChange = zoomIn ? 0.1 : -0.1;
+      const newScale = Math.max(0.1, Math.min(5, scale + zoomChange));
+
+      // Only update scale - the effect above will handle recalculating canPan
       setScale(newScale);
-    }, 5), // Reduced debounce time for more responsiveness
+    },
     [scale]
   );
 
-  // Handle zoom with constraints - reduced sensitivity
-  const handleZoom = useCallback(
-    (delta: number, cursorX: number, cursorY: number) => {
-      // Reduced multiplier from 0.05 to 0.02 for less aggressive zoom
-      const newScale = Math.max(0.1, Math.min(5, scale - delta * 0.02));
-      debouncedZoom(newScale, cursorX, cursorY);
-    },
-    [scale, debouncedZoom]
-  );
-
-  // Handle wheel event for zoom and pan
+  // Handle wheel event for zoom
   const handleWheel = useCallback(
     (e: React.WheelEvent<HTMLDivElement>) => {
       e.preventDefault();
 
-      if (!containerRef.current || !canvasRef.current) return;
-      const containerRect = containerRef.current.getBoundingClientRect();
-      const canvasIntrinsicWidth = canvasRef.current.width;
-      const canvasIntrinsicHeight = canvasRef.current.height;
-      const centeredX = (containerRect.width - canvasIntrinsicWidth) / 2;
-      const centeredY = (containerRect.height - canvasIntrinsicHeight) / 2;
-
       if (e.ctrlKey || e.metaKey) {
-        // Zoom
-        const localCursorX =
-          e.clientX - containerRect.left - centeredX - offset.x;
-        const localCursorY =
-          e.clientY - containerRect.top - centeredY - offset.y;
+        // Zoom based on direction
+        handleZoom(e.deltaY < 0);
+      } else if (canPan) {
+        // Only pan if we're allowed to
+        const newPanOffset = {
+          x: panOffset.x - e.deltaX,
+          y: panOffset.y - e.deltaY,
+        };
 
-        handleZoom(e.deltaY, localCursorX, localCursorY);
-      } else {
-        // Pan with boundaries
-        const newOffsetX = offset.x - e.deltaX;
-        const newOffsetY = offset.y - e.deltaY;
-
-        // Calculate boundaries
-        const maxPanX = canvasIntrinsicWidth * scale;
-        const maxPanY = canvasIntrinsicHeight * scale;
-
-        setOffset({
-          x: Math.max(-maxPanX, Math.min(maxPanX, newOffsetX)),
-          y: Math.max(-maxPanY, Math.min(maxPanY, newOffsetY)),
-        });
+        // Apply constraints
+        const constrained = getConstrainedPan(newPanOffset.x, newPanOffset.y);
+        setPanOffset(constrained);
       }
     },
-    [offset, scale, handleZoom]
+    [handleZoom, canPan, panOffset, getConstrainedPan]
   );
 
-  // Start panning on mouse down
-  const handleMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    setIsPanning(true);
-    lastMousePos.current = { x: e.clientX, y: e.clientY };
-  }, []);
+  // Start panning
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (!canPan) return;
+      setIsPanning(true);
+      lastPanPosition.current = { x: e.clientX, y: e.clientY };
+    },
+    [canPan]
+  );
 
-  // Handle panning movement on mouse move with boundaries
+  // Handle panning movement
   const handleMouseMove = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
-      if (!isPanning || !canvasRef.current) return;
+      if (!isPanning || !canPan) return;
 
-      const dx = e.clientX - lastMousePos.current.x;
-      const dy = e.clientY - lastMousePos.current.y;
+      const dx = e.clientX - lastPanPosition.current.x;
+      const dy = e.clientY - lastPanPosition.current.y;
 
-      // Calculate boundaries
-      const maxPanX = canvasRef.current.width * scale;
-      const maxPanY = canvasRef.current.height * scale;
+      const newPanOffset = {
+        x: panOffset.x + dx,
+        y: panOffset.y + dy,
+      };
 
-      setOffset((prev) => ({
-        x: Math.max(-maxPanX, Math.min(maxPanX, prev.x + dx)),
-        y: Math.max(-maxPanY, Math.min(maxPanY, prev.y + dy)),
-      }));
+      // Apply constraints
+      const constrained = getConstrainedPan(newPanOffset.x, newPanOffset.y);
+      setPanOffset(constrained);
 
-      lastMousePos.current = { x: e.clientX, y: e.clientY };
+      lastPanPosition.current = { x: e.clientX, y: e.clientY };
     },
-    [isPanning, scale]
+    [isPanning, canPan, panOffset, getConstrainedPan]
   );
 
-  // End panning on mouse up
-  const handleMouseUp = useCallback(() => setIsPanning(false), []);
+  // End panning
+  const handleMouseUp = useCallback(() => {
+    setIsPanning(false);
+  }, []);
 
   // Handle keyboard navigation
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (
-        !containerRef.current ||
-        !containerRef.current.contains(document.activeElement)
+        !viewportRef.current ||
+        !viewportRef.current.contains(document.activeElement)
       ) {
         return;
       }
 
       const PAN_STEP = 20;
-      const ZOOM_STEP = 0.1;
 
       switch (e.key) {
         case "ArrowUp":
-          setOffset((prev) => ({ ...prev, y: prev.y + PAN_STEP }));
+          if (canPan) {
+            const newY = panOffset.y + PAN_STEP;
+            const constrained = getConstrainedPan(panOffset.x, newY);
+            setPanOffset(constrained);
+          }
           e.preventDefault();
           break;
         case "ArrowDown":
-          setOffset((prev) => ({ ...prev, y: prev.y - PAN_STEP }));
+          if (canPan) {
+            const newY = panOffset.y - PAN_STEP;
+            const constrained = getConstrainedPan(panOffset.x, newY);
+            setPanOffset(constrained);
+          }
           e.preventDefault();
           break;
         case "ArrowLeft":
-          setOffset((prev) => ({ ...prev, x: prev.x + PAN_STEP }));
+          if (canPan) {
+            const newX = panOffset.x + PAN_STEP;
+            const constrained = getConstrainedPan(newX, panOffset.y);
+            setPanOffset(constrained);
+          }
           e.preventDefault();
           break;
         case "ArrowRight":
-          setOffset((prev) => ({ ...prev, x: prev.x - PAN_STEP }));
+          if (canPan) {
+            const newX = panOffset.x - PAN_STEP;
+            const constrained = getConstrainedPan(newX, panOffset.y);
+            setPanOffset(constrained);
+          }
           e.preventDefault();
           break;
         case "+":
         case "=":
-          setScale((prev) => Math.min(5, prev + ZOOM_STEP));
+          handleZoom(true); // Zoom in
           e.preventDefault();
           break;
         case "-":
         case "_":
-          setScale((prev) => Math.max(0.1, prev - ZOOM_STEP));
+          handleZoom(false); // Zoom out
           e.preventDefault();
           break;
         case "0":
@@ -461,7 +533,7 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
           break;
       }
     },
-    [resetView]
+    [resetView, handleZoom, canPan, panOffset, getConstrainedPan]
   );
 
   // Set up keyboard event listeners
@@ -472,57 +544,58 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     };
   }, [handleKeyDown]);
 
-  // Prevent native zoom on container wheel event
+  // Prevent native zoom on viewport wheel event
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
+    const viewport = viewportRef.current;
+    if (!viewport) return;
 
     const handleNativeWheel = (e: WheelEvent) => {
       if (e.ctrlKey || e.metaKey) e.preventDefault();
     };
 
-    container.addEventListener("wheel", handleNativeWheel, { passive: false });
-    return () => container.removeEventListener("wheel", handleNativeWheel);
+    viewport.addEventListener("wheel", handleNativeWheel, { passive: false });
+    return () => viewport.removeEventListener("wheel", handleNativeWheel);
   }, []);
 
   // Handle touch events for mobile support
   const handleTouchStart = useCallback(
     (e: React.TouchEvent<HTMLDivElement>) => {
+      if (!canPan) return;
       if (e.touches.length === 1) {
         setIsPanning(true);
-        lastMousePos.current = {
+        lastPanPosition.current = {
           x: e.touches[0].clientX,
           y: e.touches[0].clientY,
         };
       }
     },
-    []
+    [canPan]
   );
 
   const handleTouchMove = useCallback(
     (e: React.TouchEvent<HTMLDivElement>) => {
-      if (!isPanning || e.touches.length !== 1 || !canvasRef.current) return;
+      if (!isPanning || !canPan || e.touches.length !== 1) return;
 
-      const dx = e.touches[0].clientX - lastMousePos.current.x;
-      const dy = e.touches[0].clientY - lastMousePos.current.y;
+      const dx = e.touches[0].clientX - lastPanPosition.current.x;
+      const dy = e.touches[0].clientY - lastPanPosition.current.y;
 
-      // Calculate boundaries
-      const maxPanX = canvasRef.current.width * scale;
-      const maxPanY = canvasRef.current.height * scale;
+      const newPanOffset = {
+        x: panOffset.x + dx,
+        y: panOffset.y + dy,
+      };
 
-      setOffset((prev) => ({
-        x: Math.max(-maxPanX, Math.min(maxPanX, prev.x + dx)),
-        y: Math.max(-maxPanY, Math.min(maxPanY, prev.y + dy)),
-      }));
+      // Apply constraints
+      const constrained = getConstrainedPan(newPanOffset.x, newPanOffset.y);
+      setPanOffset(constrained);
 
-      lastMousePos.current = {
+      lastPanPosition.current = {
         x: e.touches[0].clientX,
         y: e.touches[0].clientY,
       };
 
       e.preventDefault();
     },
-    [isPanning, scale]
+    [isPanning, canPan, panOffset, getConstrainedPan]
   );
 
   const handleTouchEnd = useCallback(() => {
@@ -573,7 +646,7 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
             {controlsExpanded ? "▲" : "▼"}
           </button>
 
-          <div className="flex items-center">
+          <div className="flex items-center space-x-1">
             <button
               onClick={resetView}
               className="bg-gray-700 hover:bg-gray-600 p-1.5 rounded text-sm"
@@ -581,41 +654,50 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
             >
               Reset
             </button>
-            <span className="mx-1.5 text-sm">{Math.round(scale * 100)}%</span>
-          </div>
-        </div>
 
-        <div className="flex items-center space-x-2">
-          <button
-            onClick={exportAsImage}
-            className="bg-green-700 hover:bg-green-600 p-1.5 rounded text-xs sm:text-sm"
-            title="Export as PNG"
-          >
-            PNG
-          </button>
-          <button
-            onClick={exportAsText}
-            className="bg-purple-700 hover:bg-purple-600 p-1.5 rounded text-xs sm:text-sm"
-            title="Export as Text"
-          >
-            TXT
-          </button>
+            <div className="flex items-center bg-gray-800 rounded px-1">
+              <button
+                onClick={() => handleZoom(false)}
+                className="text-white p-0.5 text-lg font-bold hover:text-gray-300"
+                aria-label="Zoom out"
+              >
+                −
+              </button>
+              <span className="mx-1.5 text-sm w-12 text-center">
+                {Math.round(scale * 100)}%
+              </span>
+              <button
+                onClick={() => handleZoom(true)}
+                className="text-white p-0.5 text-lg font-bold hover:text-gray-300"
+                aria-label="Zoom in"
+              >
+                +
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
       {/* Expanded Controls - Collapsible */}
       {controlsExpanded && (
         <div className="bg-gray-900 p-2 overflow-y-auto max-h-64 sm:max-h-48">
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 text-sm">
-            {/* Left section: Import/Export */}
-            <div className="space-y-1">
-              <div className="flex flex-col">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+            {/* Left section: Import/Export & Character Set */}
+            <div className="space-y-2">
+              <div className="flex space-x-2">
                 <label
                   htmlFor="imageUpload"
-                  className="px-2 py-1 bg-blue-600 hover:bg-blue-700 cursor-pointer text-white rounded text-center text-xs"
+                  className="px-2 py-1 bg-blue-600 hover:bg-blue-700 cursor-pointer text-white rounded text-center text-xs flex-1"
                 >
                   Upload Image
                 </label>
+                <button
+                  onClick={exportAsImage}
+                  className="px-2 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-xs flex-1"
+                  title="Export as PNG"
+                >
+                  Export
+                </button>
                 <input
                   id="imageUpload"
                   type="file"
@@ -627,7 +709,7 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
 
               {/* Character Set */}
               <div className="flex items-center space-x-1">
-                <label className="text-gray-400 text-xs">Char Set:</label>
+                <label className="text-gray-400 text-xs w-16">Char Set:</label>
                 <select
                   value={characterSet}
                   onChange={(e) =>
@@ -642,16 +724,51 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
                   ))}
                 </select>
               </div>
+
+              {/* Toggles: Color and Invert together */}
+              <div className="flex items-center space-x-3">
+                <div className="flex items-center space-x-1">
+                  <label className="text-gray-400 text-xs">Color:</label>
+                  <div
+                    className={`relative inline-block w-8 h-4 ${
+                      useColor ? "bg-blue-600" : "bg-gray-600"
+                    } rounded-full transition-colors cursor-pointer`}
+                    onClick={() => setUseColor(!useColor)}
+                  >
+                    <span
+                      className={`block w-3 h-3 mt-0.5 ${
+                        useColor ? "ml-4" : "ml-1"
+                      } bg-white rounded-full transition-transform`}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center space-x-1">
+                  <label className="text-gray-400 text-xs">Invert:</label>
+                  <div
+                    className={`relative inline-block w-8 h-4 ${
+                      renderOptions.invert ? "bg-blue-600" : "bg-gray-600"
+                    } rounded-full transition-colors cursor-pointer`}
+                    onClick={toggleInvert}
+                  >
+                    <span
+                      className={`block w-3 h-3 mt-0.5 ${
+                        renderOptions.invert ? "ml-4" : "ml-1"
+                      } bg-white rounded-full transition-transform`}
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
 
-            {/* Middle section: Image settings */}
-            <div className="space-y-1">
-              {/* Size Slider */}
+            {/* Right section: All sliders grouped */}
+            <div className="space-y-2">
+              {/* Size Slider - updated range to 100-500 */}
               <div className="flex items-center space-x-1">
-                <label className="text-gray-400 text-xs w-12">Size:</label>
+                <label className="text-gray-400 text-xs w-16">Size:</label>
                 <input
                   type="range"
-                  min="50"
+                  min="100"
                   max="500"
                   step="5"
                   value={size}
@@ -661,29 +778,11 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
                 <span className="text-gray-400 text-xs w-10">{size}</span>
               </div>
 
-              {/* Use Color Toggle */}
-              <div className="flex items-center space-x-1">
-                <label className="text-gray-400 text-xs w-12">Color:</label>
-                <div
-                  className={`relative inline-block w-8 h-4 ${
-                    useColor ? "bg-blue-600" : "bg-gray-600"
-                  } rounded-full transition-colors cursor-pointer`}
-                  onClick={() => setUseColor(!useColor)}
-                >
-                  <span
-                    className={`block w-3 h-3 mt-0.5 ${
-                      useColor ? "ml-4" : "ml-1"
-                    } bg-white rounded-full transition-transform`}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Right section: Adjustments */}
-            <div className="space-y-1">
               {/* Brightness */}
               <div className="flex items-center space-x-1">
-                <label className="text-gray-400 text-xs w-14">Bright:</label>
+                <label className="text-gray-400 text-xs w-16">
+                  Brightness:
+                </label>
                 <input
                   type="range"
                   min="-100"
@@ -695,14 +794,14 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
                   className="flex-1 h-4"
                   aria-label="Adjust brightness"
                 />
-                <span className="text-gray-400 text-xs w-8">
+                <span className="text-gray-400 text-xs w-10">
                   {renderOptions.brightness}
                 </span>
               </div>
 
               {/* Contrast */}
               <div className="flex items-center space-x-1">
-                <label className="text-gray-400 text-xs w-14">Contrast:</label>
+                <label className="text-gray-400 text-xs w-16">Contrast:</label>
                 <input
                   type="range"
                   min="-100"
@@ -714,21 +813,9 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
                   className="flex-1 h-4"
                   aria-label="Adjust contrast"
                 />
-                <span className="text-gray-400 text-xs w-8">
+                <span className="text-gray-400 text-xs w-10">
                   {renderOptions.contrast}
                 </span>
-              </div>
-
-              {/* Invert */}
-              <div className="flex items-center space-x-1">
-                <label className="text-gray-400 text-xs w-14">Invert:</label>
-                <input
-                  type="checkbox"
-                  checked={renderOptions.invert}
-                  onChange={toggleInvert}
-                  className="h-3 w-3"
-                  aria-label="Invert colors"
-                />
               </div>
             </div>
           </div>
@@ -737,11 +824,12 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
 
       {/* Main Canvas Container */}
       <div
-        ref={containerRef}
+        ref={viewportRef}
         className="flex-1 bg-gray-800 text-white overflow-hidden relative"
         style={{
           touchAction: "none",
-          cursor: isPanning ? "grabbing" : "grab",
+          cursor:
+            canPan && isPanning ? "grabbing" : canPan ? "grab" : "default",
         }}
         onWheel={handleWheel}
         onMouseDown={handleMouseDown}
@@ -752,27 +840,14 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
         tabIndex={0}
-        aria-label="ASCII art canvas. Use arrow keys to pan, + and - to zoom, 0 to reset view."
+        aria-label="ASCII art canvas. Use arrow keys to pan when zoomed in, + and - to zoom, 0 to reset view."
         role="application"
       >
         {/* No image message */}
         {!image && !loading && (
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="bg-gray-900 text-white p-4 rounded-lg shadow-lg max-w-xs text-center">
-              <p className="mb-4">Upload an image to convert to ASCII art</p>
-              <label
-                htmlFor="initialImageUpload"
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded cursor-pointer"
-              >
-                Select Image
-              </label>
-              <input
-                id="initialImageUpload"
-                type="file"
-                accept="image/*"
-                onChange={handleImageUpload}
-                className="hidden"
-              />
+              <p className="">Upload an image to convert to ASCII art</p>
             </div>
           </div>
         )}
@@ -802,38 +877,22 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
           </div>
         )}
 
-        {/* Canvas with centered positioning */}
+        {/* Auto-centering canvas container */}
         <div className="absolute inset-0 flex items-center justify-center">
           <canvas
             ref={canvasRef}
             style={{
-              transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
-              transformOrigin: "center",
+              transform: `scale(${scale}) translate(${panOffset.x / scale}px, ${
+                panOffset.y / scale
+              }px)`,
+              transformOrigin: "center center",
             }}
           />
         </div>
 
-        {/* Zoom controls overlay */}
-        <div className="absolute bottom-14 right-3 flex flex-col bg-black bg-opacity-70 rounded">
-          <button
-            onClick={() => handleZoom(-5, 0, 0)}
-            className="text-white p-1.5 text-lg font-bold hover:bg-gray-700 rounded-t"
-            aria-label="Zoom in"
-          >
-            +
-          </button>
-          <button
-            onClick={() => handleZoom(5, 0, 0)}
-            className="text-white p-1.5 text-lg font-bold hover:bg-gray-700 rounded-b"
-            aria-label="Zoom out"
-          >
-            −
-          </button>
-        </div>
-
         {/* Keyboard instructions */}
         <div className="absolute bottom-3 right-3 bg-black bg-opacity-70 text-white p-1.5 rounded text-xs">
-          <p>Drag: Pan | +/-: Zoom | 0: Reset</p>
+          <p>+/-: Zoom | 0: Reset {canPan && "| Drag: Pan"}</p>
         </div>
       </div>
     </div>
