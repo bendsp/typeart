@@ -32,7 +32,7 @@ export default function Home() {
         paddingBottom: "env(safe-area-inset-bottom, 0px)", // Add padding for notches
       }}
     >
-      <AsciiCanvas initialSize={200} initialUseColor={true} />
+      <AsciiCanvas initialSize={200} initialColorFilter="original" />
 
       {/* Attribution Box - positioned in bottom left corner */}
       <div
