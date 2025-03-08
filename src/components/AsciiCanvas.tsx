@@ -215,7 +215,6 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
   const [scale, setScale] = useState(1 * ZOOM_MULTIPLIER);
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
-  const [canPan, setCanPan] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [controlsExpanded, setControlsExpanded] = useState(true);
@@ -245,22 +244,6 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     () => ASCII_PRESETS[characterSet] || DEFAULT_ASCII_CHARS,
     [characterSet]
   );
-
-  // Check if canvas is larger than viewport and calculate canPan without directly setting state
-  const checkCanPan = useCallback(() => {
-    if (!canvasRef.current || !viewportRef.current) return false;
-
-    const canvas = canvasRef.current;
-    const viewport = viewportRef.current;
-
-    // Calculate if the scaled canvas is larger than the viewport
-    const scaledWidth = canvas.width * scale;
-    const scaledHeight = canvas.height * scale;
-    const viewportWidth = viewport.clientWidth;
-    const viewportHeight = viewport.clientHeight;
-
-    return scaledWidth > viewportWidth || scaledHeight > viewportHeight;
-  }, [scale]);
 
   // Reset view to original position and scale
   const resetView = useCallback(() => {
@@ -473,129 +456,91 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     }
   }, [renderOptions, renderAsciiArt]);
 
-  // Calculate constrained pan values without directly setting state
-  const getConstrainedPan = useCallback(
-    (panX: number, panY: number) => {
-      if (!canvasRef.current || !viewportRef.current || !canPan) {
-        return { x: panX, y: panY };
-      }
+  // Add a flag/detector for mobile devices
+  const isMobileDevice = useRef(
+    typeof window !== "undefined" &&
+      (navigator.maxTouchPoints > 0 ||
+        /Android|iPhone|iPad|iPod|Windows Phone/i.test(navigator.userAgent))
+  ).current;
 
-      const canvas = canvasRef.current;
-      const viewport = viewportRef.current;
-
-      const scaledWidth = canvas.width * scale;
-      const scaledHeight = canvas.height * scale;
-      const viewportWidth = viewport.clientWidth;
-      const viewportHeight = viewport.clientHeight;
-
-      // Calculate maximum allowed pan in each direction
-      // This keeps at least 20% of the canvas visible
-      const maxPanX = (scaledWidth - viewportWidth) / 2 + scaledWidth * 0.2;
-      const maxPanY = (scaledHeight - viewportHeight) / 2 + scaledHeight * 0.2;
-
-      return {
-        x: Math.max(-maxPanX, Math.min(maxPanX, panX)),
-        y: Math.max(-maxPanY, Math.min(maxPanY, panY)),
-      };
-    },
-    [canPan, scale]
-  );
-
-  // Combined effect to update canPan and constrain offsets when needed
-  useEffect(() => {
-    // Skip if refs aren't ready yet
-    if (!canvasRef.current || !viewportRef.current) return;
-
-    // Check if we can pan
-    const shouldCanPan = checkCanPan();
-
-    // Only update if there's a change to avoid re-render loops
-    if (shouldCanPan !== canPan) {
-      setCanPan(shouldCanPan);
-    }
-
-    // If we can't pan, reset offset to center
-    if (!shouldCanPan && (panOffset.x !== 0 || panOffset.y !== 0)) {
-      setPanOffset({ x: 0, y: 0 });
-    }
-    // If we can pan, ensure we're within constraints
-    else if (shouldCanPan) {
-      const constrained = getConstrainedPan(panOffset.x, panOffset.y);
-      if (constrained.x !== panOffset.x || constrained.y !== panOffset.y) {
-        setPanOffset(constrained);
-      }
-    }
-  }, [scale, panOffset, canPan, checkCanPan, getConstrainedPan]);
-
-  // Simple zoom functionality - now with fixed 10 percentage point change
+  // Simple zoom functionality with consistent 10% increments across all platforms
   const handleZoom = useCallback(
     (zoomIn: boolean) => {
-      // Change by exactly 10 percentage points (0.1 absolute change)
+      // Use 10% increment for all platforms
       const zoomChange = zoomIn ? 0.1 : -0.1;
+
       // Apply the multiplier to the actual scale but not to the min/max checks
+      // Set minimum scale to 0.01 (1%) for mobile devices and 0.05 (5%) for desktop
+      const minScale = isMobileDevice ? 0.01 : 0.05;
       const newScale =
-        Math.max(0.1, Math.min(5, scale / ZOOM_MULTIPLIER + zoomChange)) *
+        Math.max(minScale, Math.min(5, scale / ZOOM_MULTIPLIER + zoomChange)) *
         ZOOM_MULTIPLIER;
 
-      // Only update scale - the effect above will handle recalculating canPan
+      // Only update scale
       setScale(newScale);
     },
-    [scale, ZOOM_MULTIPLIER]
+    [scale, ZOOM_MULTIPLIER, isMobileDevice]
   );
 
-  // Handle wheel event for zoom
+  // Handle wheel event for zoom and pan with consistent 10% increment
   const handleWheel = useCallback(
     (e: React.WheelEvent<HTMLDivElement>) => {
       e.preventDefault();
 
       if (e.ctrlKey || e.metaKey) {
-        // Zoom based on direction
-        handleZoom(e.deltaY < 0);
-      } else if (canPan) {
-        // Only pan if we're allowed to
-        const newPanOffset = {
-          x: panOffset.x - e.deltaX,
-          y: panOffset.y - e.deltaY,
-        };
+        // Use standard 10% zoom increment for all platforms
+        const zoomDelta = 0.1; // 10% change per wheel tick
+        const zoomIn = e.deltaY < 0;
 
-        // Apply constraints
-        const constrained = getConstrainedPan(newPanOffset.x, newPanOffset.y);
-        setPanOffset(constrained);
+        const zoomChange = zoomIn ? zoomDelta : -zoomDelta;
+        // Set minimum scale to 0.01 (1%) for mobile devices and 0.05 (5%) for desktop
+        const minScale = isMobileDevice ? 0.01 : 0.05;
+        const newScale =
+          Math.max(
+            minScale,
+            Math.min(5, scale / ZOOM_MULTIPLIER + zoomChange)
+          ) * ZOOM_MULTIPLIER;
+
+        setScale(newScale);
+      } else {
+        // Pan without canPan check - always enable panning
+        const newOffsetX = panOffset.x - e.deltaX;
+        const newOffsetY = panOffset.y - e.deltaY;
+
+        // No need to check canPan, but still apply constraints if needed
+        setPanOffset({
+          x: newOffsetX,
+          y: newOffsetY,
+        });
       }
     },
-    [handleZoom, canPan, panOffset, getConstrainedPan]
+    [panOffset, scale, ZOOM_MULTIPLIER, isMobileDevice]
   );
 
-  // Start panning
-  const handleMouseDown = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
-      if (!canPan) return;
-      setIsPanning(true);
-      lastPanPosition.current = { x: e.clientX, y: e.clientY };
-    },
-    [canPan]
-  );
+  // Start panning on mouse down - remove canPan check
+  const handleMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    // Always enable panning
+    setIsPanning(true);
+    lastPanPosition.current = { x: e.clientX, y: e.clientY };
+  }, []);
 
-  // Handle panning movement
+  // Handle panning movement - remove canPan check
   const handleMouseMove = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
-      if (!isPanning || !canPan) return;
+      if (!isPanning) return;
 
       const dx = e.clientX - lastPanPosition.current.x;
       const dy = e.clientY - lastPanPosition.current.y;
 
-      const newPanOffset = {
-        x: panOffset.x + dx,
-        y: panOffset.y + dy,
-      };
-
-      // Apply constraints
-      const constrained = getConstrainedPan(newPanOffset.x, newPanOffset.y);
-      setPanOffset(constrained);
+      // No canPan check needed
+      setPanOffset((prev) => ({
+        x: prev.x + dx,
+        y: prev.y + dy,
+      }));
 
       lastPanPosition.current = { x: e.clientX, y: e.clientY };
     },
-    [isPanning, canPan, panOffset, getConstrainedPan]
+    [isPanning]
   );
 
   // End panning
@@ -603,7 +548,7 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     setIsPanning(false);
   }, []);
 
-  // Handle keyboard navigation
+  // Handle keyboard navigation - remove canPan checks
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (
@@ -617,35 +562,23 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
 
       switch (e.key) {
         case "ArrowUp":
-          if (canPan) {
-            const newY = panOffset.y + PAN_STEP;
-            const constrained = getConstrainedPan(panOffset.x, newY);
-            setPanOffset(constrained);
-          }
+          // Always allow panning
+          setPanOffset((prev) => ({ ...prev, y: prev.y + PAN_STEP }));
           e.preventDefault();
           break;
         case "ArrowDown":
-          if (canPan) {
-            const newY = panOffset.y - PAN_STEP;
-            const constrained = getConstrainedPan(panOffset.x, newY);
-            setPanOffset(constrained);
-          }
+          // Always allow panning
+          setPanOffset((prev) => ({ ...prev, y: prev.y - PAN_STEP }));
           e.preventDefault();
           break;
         case "ArrowLeft":
-          if (canPan) {
-            const newX = panOffset.x + PAN_STEP;
-            const constrained = getConstrainedPan(newX, panOffset.y);
-            setPanOffset(constrained);
-          }
+          // Always allow panning
+          setPanOffset((prev) => ({ ...prev, x: prev.x + PAN_STEP }));
           e.preventDefault();
           break;
         case "ArrowRight":
-          if (canPan) {
-            const newX = panOffset.x - PAN_STEP;
-            const constrained = getConstrainedPan(newX, panOffset.y);
-            setPanOffset(constrained);
-          }
+          // Always allow panning
+          setPanOffset((prev) => ({ ...prev, x: prev.x - PAN_STEP }));
           e.preventDefault();
           break;
         case "+":
@@ -664,7 +597,7 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
           break;
       }
     },
-    [resetView, handleZoom, canPan, panOffset, getConstrainedPan]
+    [resetView, handleZoom]
   );
 
   // Set up keyboard event listeners
@@ -688,49 +621,103 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     return () => viewport.removeEventListener("wheel", handleNativeWheel);
   }, []);
 
-  // Handle touch events for mobile support
+  // Additional state and refs for pinch-to-zoom
+  const [touchDistance, setTouchDistance] = useState<number | null>(null);
+  const lastTouchDistance = useRef<number | null>(null);
+
+  // Calculate distance between two touch points
+  const getTouchDistance = useCallback((touches: React.TouchList) => {
+    if (touches.length < 2) return null;
+
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  }, []);
+
+  // Get center point between two touches
+  const getTouchCenter = useCallback((touches: React.TouchList) => {
+    if (touches.length < 2) return null;
+
+    return {
+      x: (touches[0].clientX + touches[1].clientX) / 2,
+      y: (touches[0].clientY + touches[1].clientY) / 2,
+    };
+  }, []);
+
+  // Handle touch events - support pinch-to-zoom
   const handleTouchStart = useCallback(
     (e: React.TouchEvent<HTMLDivElement>) => {
-      if (!canPan) return;
       if (e.touches.length === 1) {
+        // Single touch - start panning
         setIsPanning(true);
         lastPanPosition.current = {
           x: e.touches[0].clientX,
           y: e.touches[0].clientY,
         };
+        setTouchDistance(null);
+      } else if (e.touches.length === 2) {
+        // Two touches - start pinch-to-zoom
+        setIsPanning(false);
+        const distance = getTouchDistance(e.touches);
+        setTouchDistance(distance);
+        lastTouchDistance.current = distance;
       }
     },
-    [canPan]
+    [getTouchDistance]
   );
 
   const handleTouchMove = useCallback(
     (e: React.TouchEvent<HTMLDivElement>) => {
-      if (!isPanning || !canPan || e.touches.length !== 1) return;
+      if (e.touches.length === 1 && isPanning) {
+        // Handle panning with one finger
+        const dx = e.touches[0].clientX - lastPanPosition.current.x;
+        const dy = e.touches[0].clientY - lastPanPosition.current.y;
 
-      const dx = e.touches[0].clientX - lastPanPosition.current.x;
-      const dy = e.touches[0].clientY - lastPanPosition.current.y;
+        setPanOffset((prev) => ({
+          x: prev.x + dx,
+          y: prev.y + dy,
+        }));
 
-      const newPanOffset = {
-        x: panOffset.x + dx,
-        y: panOffset.y + dy,
-      };
+        lastPanPosition.current = {
+          x: e.touches[0].clientX,
+          y: e.touches[0].clientY,
+        };
+      } else if (e.touches.length === 2) {
+        // Handle pinch-to-zoom with two fingers
+        const currentDistance = getTouchDistance(e.touches);
+        const previousDistance = lastTouchDistance.current;
 
-      // Apply constraints
-      const constrained = getConstrainedPan(newPanOffset.x, newPanOffset.y);
-      setPanOffset(constrained);
+        if (currentDistance && previousDistance && previousDistance > 0) {
+          // Calculate zoom based directly on the pinch distance ratio
+          // This is much more responsive than using small fixed steps
+          const distanceRatio = currentDistance / previousDistance;
 
-      lastPanPosition.current = {
-        x: e.touches[0].clientX,
-        y: e.touches[0].clientY,
-      };
+          // Get center point of the pinch
+          const center = getTouchCenter(e.touches);
+
+          if (center) {
+            // Calculate new scale with direct ratio scaling for more responsive feel
+            // Allow zooming out to 1% (0.01) on mobile
+            const newScale = Math.max(0.01, Math.min(5, scale * distanceRatio));
+
+            // Apply scale change
+            setScale(newScale);
+          }
+        }
+
+        // Update last touch distance
+        lastTouchDistance.current = currentDistance;
+      }
 
       e.preventDefault();
     },
-    [isPanning, canPan, panOffset, getConstrainedPan]
+    [isPanning, getTouchDistance, getTouchCenter, scale]
   );
 
   const handleTouchEnd = useCallback(() => {
     setIsPanning(false);
+    setTouchDistance(null);
+    lastTouchDistance.current = null;
   }, []);
 
   // Adjust brightness
@@ -825,7 +812,7 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
             <div className="flex items-center bg-gray-800 rounded px-2 py-1">
               <button
                 onClick={handleControlClick(() => handleZoom(false))}
-                className="text-white p-0.5 text-lg font-bold hover:text-gray-300"
+                className="text-white p-0.5 text-lg hover:text-gray-300"
                 aria-label="Zoom out by 10%"
               >
                 −
@@ -836,7 +823,7 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
               </span>
               <button
                 onClick={handleControlClick(() => handleZoom(true))}
-                className="text-white p-0.5 text-lg font-bold hover:text-gray-300"
+                className="text-white p-0.5 text-lg hover:text-gray-300"
                 aria-label="Zoom in by 10%"
               >
                 +
@@ -1042,7 +1029,7 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
       {showExportDialog && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-gray-800 text-white p-6 rounded-lg shadow-xl max-w-md w-full">
-            <h2 className="text-xl font-bold mb-4">Export Options</h2>
+            <h2 className="text-xl  mb-4">Export Options</h2>
 
             {/* Size Selection */}
             <div className="mb-4">
@@ -1127,8 +1114,7 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
         className="flex-1 bg-gray-800 text-white overflow-hidden relative outline-none focus:outline-none focus:ring-0"
         style={{
           touchAction: "none",
-          cursor:
-            canPan && isPanning ? "grabbing" : canPan ? "grab" : "default",
+          cursor: isPanning ? "grabbing" : "grab", // Always show grab cursor
         }}
         onWheel={handleWheel}
         onMouseDown={handleMouseDown}
@@ -1139,7 +1125,7 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
         tabIndex={0}
-        aria-label="ASCII art canvas. Use arrow keys to pan when zoomed in, + and - to zoom, 0 to reset view."
+        aria-label="ASCII art canvas. Use arrow keys to pan, + and - to zoom, 0 to reset view."
         role="application"
       >
         {/* No image message */}
@@ -1155,7 +1141,7 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
         {loading && (
           <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 z-10">
             <div className="bg-white text-black p-3 rounded-lg shadow-lg">
-              <p className="text-lg">Loading...</p>
+              <p className="text-lg ">Loading...</p>
             </div>
           </div>
         )}
@@ -1164,11 +1150,11 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
         {error && (
           <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 z-10">
             <div className="bg-red-600 text-white p-4 rounded-lg shadow-lg max-w-md">
-              <h3 className="text-lg mb-1">Error</h3>
+              <h3 className="text-lg  mb-1">Error</h3>
               <p className="font-medium">{error}</p>
               <button
                 onClick={() => setError(null)}
-                className="mt-2 px-3 py-1 bg-white text-red-600 rounded hover:bg-gray-100"
+                className="mt-2 px-3 py-1 bg-white text-red-600 rounded hover:bg-gray-100 "
               >
                 Dismiss
               </button>
@@ -1187,31 +1173,6 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
               transformOrigin: "center center",
             }}
           />
-        </div>
-
-        {/* Attribution box */}
-        <div className="absolute bottom-3 left-3 bg-black bg-opacity-70 text-white p-1.5 rounded text-xs">
-          <a
-            href="https://github.com/bendsp"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-white hover:text-blue-300 transition-colors flex items-center"
-          >
-            <span>Ben Desprets </span>
-            <svg
-              className="ml-1 w-3 h-3"
-              fill="currentColor"
-              viewBox="0 0 16 16"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
-            </svg>
-          </a>
-        </div>
-
-        {/* Keyboard instructions */}
-        <div className="absolute bottom-3 right-3 bg-black bg-opacity-70 text-white p-1.5 rounded text-xs">
-          <p>+/-: Zoom | 0: Reset {canPan && "| Drag: Pan"}</p>
         </div>
       </div>
     </div>
