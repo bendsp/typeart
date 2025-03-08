@@ -37,10 +37,26 @@ const ASCII_PRESETS = {
 
 type CharacterSet = keyof typeof ASCII_PRESETS;
 
+// Define color filter types
+type ColorFilter =
+  | "original" // Original image colors
+  | "vintage" // Sepia-toned old photograph look
+  | "monochrome" // Black and white
+  | "inverted" // Inverted colors
+  | "pastel" // Soft pastel colors
+  | "matrix" // Green on black Matrix style
+  | "hell" // Hell style (fiery reds and oranges)
+  | "blueprint" // Technical drawing blue and white
+  | "thermal" // Heat map visualization style
+  | "rainbow" // Old neon effect with rainbow colors
+  | "glitch" // Digital glitch effect
+  | "cyberpunk" // Two-tone cyberpunk gradient
+  | "retrowave"; // Bold retro color scheme
+
 interface AsciiCanvasProps {
   initialImage?: string | null;
   initialSize?: number;
-  initialUseColor?: boolean;
+  initialColorFilter?: ColorFilter;
   initialCharacterSet?: CharacterSet;
   onError?: (error: Error) => void;
 }
@@ -76,11 +92,53 @@ const EXPORT_FORMATS: ExportFormat[] = [
   { extension: "webp", mimeType: "image/webp", label: "WebP (lmao)" },
 ];
 
+// Utility function to convert HSL to RGB
+function hslToRgb(h: number, s: number, l: number): [number, number, number] {
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = l - c / 2;
+  let r = 0,
+    g = 0,
+    b = 0;
+
+  if (h >= 0 && h < 60) {
+    r = c;
+    g = x;
+    b = 0;
+  } else if (h >= 60 && h < 120) {
+    r = x;
+    g = c;
+    b = 0;
+  } else if (h >= 120 && h < 180) {
+    r = 0;
+    g = c;
+    b = x;
+  } else if (h >= 180 && h < 240) {
+    r = 0;
+    g = x;
+    b = c;
+  } else if (h >= 240 && h < 300) {
+    r = x;
+    g = 0;
+    b = c;
+  } else if (h >= 300 && h < 360) {
+    r = c;
+    g = 0;
+    b = x;
+  }
+
+  return [
+    Math.round((r + m) * 255),
+    Math.round((g + m) * 255),
+    Math.round((b + m) * 255),
+  ];
+}
+
 // Convert image to ASCII art and render on the canvas
 const drawAscii = (
   image: HTMLImageElement,
   size: number,
-  useColor: boolean,
+  colorFilter: ColorFilter,
   characterSet: string,
   outputCanvas: HTMLCanvasElement,
   options: AsciiRenderOptions = { brightness: 0, contrast: 0, invert: false }
@@ -90,10 +148,7 @@ const drawAscii = (
   const height = Math.floor((size / aspectRatio) * CHAR_ASPECT_RATIO);
 
   const tempCanvas = document.createElement("canvas");
-  const ctx = tempCanvas.getContext("2d", {
-    willReadFrequently: true,
-    alpha: false,
-  });
+  const ctx = tempCanvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) return;
 
   tempCanvas.width = width;
@@ -136,12 +191,8 @@ const drawAscii = (
   }
 
   const imageData = ctx.getImageData(0, 0, width, height).data;
-
-  // Double the canvas size for higher resolution
   outputCanvas.width = width * CHAR_WIDTH;
   outputCanvas.height = height * CHAR_HEIGHT;
-
-  // Get context with high quality settings
   const outputCtx = outputCanvas.getContext("2d", {
     alpha: false,
   }) as CanvasRenderingContext2D;
@@ -156,6 +207,17 @@ const drawAscii = (
   outputCtx.font = `bold ${CHAR_HEIGHT}px monospace`;
   outputCtx.textBaseline = "top";
 
+  // Set background color based on color filter
+  if (
+    colorFilter === "matrix" ||
+    colorFilter === "blueprint" ||
+    colorFilter === "cyberpunk" ||
+    colorFilter === "retrowave"
+  ) {
+    outputCtx.fillStyle = "rgb(0, 0, 0)";
+    outputCtx.fillRect(0, 0, outputCanvas.width, outputCanvas.height);
+  }
+
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const idx = (y * width + x) * 4;
@@ -168,19 +230,258 @@ const drawAscii = (
       );
       const char = characterSet[charIndex];
 
-      // Ensure minimum contrast for text
-      if (useColor) {
-        // Calculate luminance to ensure text is visible
-        const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-        // Apply color with contrast adjustment if needed
-        outputCtx.fillStyle = `rgb(${r}, ${g}, ${b})`;
-      } else {
-        outputCtx.fillStyle = "white";
+      // Apply color filter
+      switch (colorFilter) {
+        case "original":
+          // Original colors from image
+          outputCtx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+          break;
+        case "monochrome":
+          // Black and white
+          const gray = Math.round(brightness);
+          outputCtx.fillStyle = `rgb(${gray}, ${gray}, ${gray})`;
+          break;
+        case "vintage":
+          // Vintage sepia tone
+          const sepiaR = Math.min(255, r * 0.393 + g * 0.769 + b * 0.189);
+          const sepiaG = Math.min(255, r * 0.349 + g * 0.686 + b * 0.168);
+          const sepiaB = Math.min(255, r * 0.272 + g * 0.534 + b * 0.131);
+          outputCtx.fillStyle = `rgb(${sepiaR}, ${sepiaG}, ${sepiaB})`;
+          break;
+        case "inverted":
+          // Inverted colors
+          outputCtx.fillStyle = `rgb(${255 - r}, ${255 - g}, ${255 - b})`;
+          break;
+        case "matrix":
+          // Matrix green (brighter for brighter pixels)
+          const intensity = Math.round(brightness);
+          outputCtx.fillStyle = `rgb(0, ${Math.min(255, intensity * 1.5)}, 0)`;
+          break;
+        case "hell":
+          // Hell style (fiery reds and oranges)
+          const hellBrightness = brightness / 255;
+          if (hellBrightness > 0.7) {
+            // Bright areas: yellow to white
+            outputCtx.fillStyle = `rgb(255, ${Math.round(
+              200 + hellBrightness * 55
+            )}, ${Math.round(50 + hellBrightness * 50)})`;
+          } else if (hellBrightness > 0.4) {
+            // Mid tones: orange to yellow
+            outputCtx.fillStyle = `rgb(255, ${Math.round(
+              50 + hellBrightness * 150
+            )}, 0)`;
+          } else {
+            // Dark areas: deep red to orange
+            outputCtx.fillStyle = `rgb(${Math.round(
+              120 + hellBrightness * 135
+            )}, ${Math.round(hellBrightness * 50)}, 0)`;
+          }
+          break;
+        case "blueprint":
+          // Blueprint technical drawing style
+          const bpBrightness = brightness / 255;
+          const bpValue = Math.round(210 + bpBrightness * 45); // Bright lines on blue background
+          outputCtx.fillStyle = `rgb(${bpValue * bpBrightness}, ${
+            bpValue * bpBrightness
+          }, ${100 + bpBrightness * 155})`;
+          break;
+        case "thermal":
+          // Adjusted Thermal imaging heat map
+          const heatLevel = brightness / 255;
+          if (heatLevel > 0.75) {
+            // Hottest: white to yellow
+            outputCtx.fillStyle = `rgb(255, 255, ${Math.round(
+              heatLevel * 255
+            )})`;
+          } else if (heatLevel > 0.5) {
+            // Hot: yellow to red
+            outputCtx.fillStyle = `rgb(255, ${
+              Math.round(heatLevel * 510) - 255
+            }, 0)`;
+          } else if (heatLevel > 0.25) {
+            // Warm: red to purple
+            outputCtx.fillStyle = `rgb(${
+              Math.round(heatLevel * 510) - 127
+            }, 0, ${Math.round((1 - heatLevel) * 255)})`;
+          } else {
+            // Cool: purple to blue/black
+            outputCtx.fillStyle = `rgb(0, 0, ${
+              Math.round(heatLevel * 510) - 127
+            })`;
+          }
+          break;
+        case "rainbow":
+          // Old neon effect with full rainbow variation
+          const rainbowIntensity = brightness / 255;
+          const hue = (x / width) * 360; // Full hue range
+          const [rainbowR, rainbowG, rainbowB] = hslToRgb(
+            hue,
+            1,
+            rainbowIntensity
+          );
+          outputCtx.fillStyle = `rgb(${rainbowR}, ${rainbowG}, ${rainbowB})`;
+          break;
+        case "glitch":
+          // Enhanced Digital glitch effect - more distortion, less noise
+          let glitchR = r;
+          let glitchG = g;
+          let glitchB = b;
+
+          // Stronger channel shifting
+          const shiftAmount = 70; // Increased from 50
+
+          // Horizontal line distortion - offset pixels horizontally
+          const horizontalOffset = Math.floor(Math.random() * 7) - 3; // -3 to +3 pixel shift
+          if (horizontalOffset !== 0 && Math.random() > 0.7) {
+            // Get color from offset position when possible
+            const offsetX = Math.max(
+              0,
+              Math.min(width - 1, x + horizontalOffset)
+            );
+            const offsetIdx = (y * width + offsetX) * 4;
+            glitchR = imageData[offsetIdx];
+            glitchG = imageData[offsetIdx + 1];
+            glitchB = imageData[offsetIdx + 2];
+          }
+
+          // Channel shifting with more extreme values
+          if (Math.random() > 0.6) {
+            glitchR = Math.max(
+              0,
+              Math.min(255, glitchR + (Math.random() * 2 - 1) * shiftAmount)
+            );
+          }
+          if (Math.random() > 0.6) {
+            glitchG = Math.max(
+              0,
+              Math.min(255, glitchG + (Math.random() * 2 - 1) * shiftAmount)
+            );
+          }
+          if (Math.random() > 0.6) {
+            glitchB = Math.max(
+              0,
+              Math.min(255, glitchB + (Math.random() * 2 - 1) * shiftAmount)
+            );
+          }
+
+          // Channel bleeding - one channel leaks into others
+          if (Math.random() > 0.85) {
+            const dominantChannel = Math.floor(Math.random() * 3);
+            if (dominantChannel === 0) {
+              glitchG = Math.max(0, Math.min(255, glitchR * 0.7));
+              glitchB = Math.max(0, Math.min(255, glitchR * 0.3));
+            } else if (dominantChannel === 1) {
+              glitchR = Math.max(0, Math.min(255, glitchG * 0.3));
+              glitchB = Math.max(0, Math.min(255, glitchG * 0.7));
+            } else {
+              glitchR = Math.max(0, Math.min(255, glitchB * 0.5));
+              glitchG = Math.max(0, Math.min(255, glitchB * 0.5));
+            }
+          }
+
+          // Occasional color channel swapping (less frequent)
+          if (Math.random() > 0.92) {
+            [glitchR, glitchG, glitchB] = [glitchB, glitchR, glitchG];
+          }
+
+          // Complete signal loss (black/white) - reduced frequency
+          if (Math.random() > 0.97) {
+            const lossVal = Math.random() > 0.5 ? 255 : 0;
+            glitchR = glitchG = glitchB = lossVal;
+          }
+
+          outputCtx.fillStyle = `rgb(${glitchR}, ${glitchG}, ${glitchB})`;
+          break;
+        case "pastel":
+          // Soft pastel colors
+          const pastelR = Math.round(r * 0.7 + 77);
+          const pastelG = Math.round(g * 0.7 + 77);
+          const pastelB = Math.round(b * 0.7 + 77);
+          outputCtx.fillStyle = `rgb(${pastelR}, ${pastelG}, ${pastelB})`;
+          break;
+        case "cyberpunk":
+          // Cyberpunk gradient based on brightness (renamed from duotone)
+          const cyberpunkFactor = brightness / 255;
+          // Primary color (highlights): Teal (#00C2BA)
+          const primaryR = 0;
+          const primaryG = 194;
+          const primaryB = 186;
+          // Secondary color (shadows): Deep Purple (#2A0057)
+          const secondaryR = 42;
+          const secondaryG = 0;
+          const secondaryB = 87;
+
+          // Mix the two colors based on brightness
+          const cyberpunkR = Math.round(
+            secondaryR + (primaryR - secondaryR) * cyberpunkFactor
+          );
+          const cyberpunkG = Math.round(
+            secondaryG + (primaryG - secondaryG) * cyberpunkFactor
+          );
+          const cyberpunkB = Math.round(
+            secondaryB + (primaryB - secondaryB) * cyberpunkFactor
+          );
+
+          outputCtx.fillStyle = `rgb(${cyberpunkR}, ${cyberpunkG}, ${cyberpunkB})`;
+          break;
+        case "retrowave":
+          // Retrowave color scheme
+          const retrowaveFactor = brightness / 255;
+          let retroR, retroG, retroB;
+
+          if (retrowaveFactor > 0.8) {
+            // Highlights: Bright cyan
+            retroR = 80;
+            retroG = 235;
+            retroB = 255;
+          } else if (retrowaveFactor > 0.5) {
+            // Mid-tones: Purple/Pink
+            retroR = 220;
+            retroG = 50;
+            retroB = 220;
+          } else if (retrowaveFactor > 0.2) {
+            // Shadow mid-tones: Deep blue
+            retroR = 30;
+            retroG = 20;
+            retroB = 180;
+          } else {
+            // Deep shadows: Almost black with hint of purple
+            retroR = 10;
+            retroG = 5;
+            retroB = 40;
+          }
+
+          outputCtx.fillStyle = `rgb(${retroR}, ${retroG}, ${retroB})`;
+          break;
       }
 
       outputCtx.fillText(char, x * CHAR_WIDTH, y * CHAR_HEIGHT);
     }
   }
+
+  // Add CRT pattern effect
+  const applyCRTPattern = (
+    ctx: CanvasRenderingContext2D,
+    width: number,
+    height: number
+  ) => {
+    const imageData = ctx.getImageData(0, 0, width, height);
+    const data = imageData.data;
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const idx = (y * width + x) * 4;
+        if (x % 2 === 0) {
+          data[idx] *= 0.9; // Slightly dim every other pixel for CRT effect
+          data[idx + 1] *= 0.9;
+          data[idx + 2] *= 0.9;
+        }
+      }
+    }
+    ctx.putImageData(imageData, 0, 0);
+  };
+
+  // Apply CRT pattern after drawing
+  applyCRTPattern(outputCtx, width * CHAR_WIDTH, height * CHAR_HEIGHT);
 
   // Clean up
   tempCanvas.remove();
@@ -190,14 +491,15 @@ const drawAscii = (
 const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
   initialImage = null,
   initialSize = 200,
-  initialUseColor = true,
+  initialColorFilter = "original",
   initialCharacterSet = "default",
   onError,
 }) => {
   // Internal state management - no need for external setters
   const [image, setImage] = useState<string | null>(initialImage);
   const [size, setSize] = useState(initialSize);
-  const [useColor, setUseColor] = useState(initialUseColor);
+  const [colorFilter, setColorFilter] =
+    useState<ColorFilter>(initialColorFilter);
   const [characterSet, setCharacterSet] =
     useState<CharacterSet>(initialCharacterSet);
 
@@ -415,12 +717,12 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     drawAscii(
       imageRef.current,
       size,
-      useColor,
+      colorFilter,
       asciiChars,
       canvasRef.current,
       renderOptions
     );
-  }, [size, useColor, asciiChars, renderOptions]);
+  }, [size, colorFilter, asciiChars, renderOptions]);
 
   // Load image and render ASCII art
   useEffect(() => {
@@ -919,39 +1221,30 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
                 </select>
               </div>
 
-              {/* Toggles: Color and Invert together */}
-              <div className="flex items-center space-x-3">
-                <div className="flex items-center space-x-1">
-                  <label className="text-gray-400 text-xs">Color:</label>
-                  <div
-                    className={`relative inline-block w-8 h-4 ${
-                      useColor ? "bg-blue-600" : "bg-gray-600"
-                    } rounded-full transition-colors cursor-pointer`}
-                    onClick={handleControlClick(() => setUseColor(!useColor))}
-                  >
-                    <span
-                      className={`block w-3 h-3 mt-0.5 ${
-                        useColor ? "ml-4" : "ml-1"
-                      } bg-white rounded-full transition-transform`}
-                    />
-                  </div>
-                </div>
-
-                <div className="flex items-center space-x-1">
-                  <label className="text-gray-400 text-xs">Invert:</label>
-                  <div
-                    className={`relative inline-block w-8 h-4 ${
-                      renderOptions.invert ? "bg-blue-600" : "bg-gray-600"
-                    } rounded-full transition-colors cursor-pointer`}
-                    onClick={handleControlClick(toggleInvert)}
-                  >
-                    <span
-                      className={`block w-3 h-3 mt-0.5 ${
-                        renderOptions.invert ? "ml-4" : "ml-1"
-                      } bg-white rounded-full transition-transform`}
-                    />
-                  </div>
-                </div>
+              {/* Color Filter Dropdown - Updated with removed options */}
+              <div className="flex items-center space-x-1">
+                <label className="text-gray-400 text-xs w-16">Filter:</label>
+                <select
+                  value={colorFilter}
+                  onChange={(e) =>
+                    setColorFilter(e.target.value as ColorFilter)
+                  }
+                  className="bg-gray-800 text-white rounded border border-gray-700 text-xs p-0.5 flex-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="original">Original</option>
+                  <option value="monochrome">Black & White</option>
+                  <option value="vintage">Vintage</option>
+                  <option value="inverted">Inverted</option>
+                  <option value="pastel">Pastel</option>
+                  <option value="matrix">Matrix</option>
+                  <option value="cyberpunk">Cyberpunk</option>
+                  <option value="hell">Hell</option>
+                  <option value="blueprint">Blueprint</option>
+                  <option value="retrowave">Retrowave</option>
+                  <option value="thermal">Thermal</option>
+                  <option value="rainbow">Rainbow</option>
+                  <option value="glitch">Glitch</option>
+                </select>
               </div>
             </div>
 
