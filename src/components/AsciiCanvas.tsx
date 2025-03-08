@@ -33,7 +33,6 @@ const ASCII_PRESETS = {
   default: DEFAULT_ASCII_CHARS,
   simple: "@%#*+=-:. ",
   blocks: "█▓▒░ ",
-  emoji: "🖤❤️🧡💛💚💙💜🤍",
 };
 
 type CharacterSet = keyof typeof ASCII_PRESETS;
