@@ -20,8 +20,8 @@ function debounce<T extends (...args: any[]) => any>(
   };
 }
 
-const CHAR_WIDTH = 6;
-const CHAR_HEIGHT = 12;
+const CHAR_WIDTH = 24;
+const CHAR_HEIGHT = 48;
 const CHAR_ASPECT_RATIO = CHAR_WIDTH / CHAR_HEIGHT;
 
 // Default character set, from darkest to lightest
@@ -65,7 +65,10 @@ const drawAscii = (
   const height = Math.floor((size / aspectRatio) * CHAR_ASPECT_RATIO);
 
   const tempCanvas = document.createElement("canvas");
-  const ctx = tempCanvas.getContext("2d", { willReadFrequently: true });
+  const ctx = tempCanvas.getContext("2d", {
+    willReadFrequently: true,
+    alpha: false,
+  });
   if (!ctx) return;
 
   tempCanvas.width = width;
@@ -108,12 +111,23 @@ const drawAscii = (
   }
 
   const imageData = ctx.getImageData(0, 0, width, height).data;
+
+  // Double the canvas size for higher resolution
   outputCanvas.width = width * CHAR_WIDTH;
   outputCanvas.height = height * CHAR_HEIGHT;
-  const outputCtx = outputCanvas.getContext("2d");
+
+  // Get context with high quality settings
+  const outputCtx = outputCanvas.getContext("2d", {
+    alpha: false,
+  }) as CanvasRenderingContext2D;
+
   if (!outputCtx) return;
 
+  // Disable image smoothing for crisp text
+  outputCtx.imageSmoothingEnabled = false;
   outputCtx.clearRect(0, 0, outputCanvas.width, outputCanvas.height);
+
+  // Use a crisp font rendering
   outputCtx.font = `bold ${CHAR_HEIGHT}px monospace`;
   outputCtx.textBaseline = "top";
 
@@ -166,7 +180,14 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
 
-  const [scale, setScale] = useState(1);
+  // Add a ref for the main container to manage focus
+  const mainContainerRef = useRef<HTMLDivElement | null>(null);
+
+  // Add a zoom multiplier to compensate for larger character size
+  // This scales the actual zoom without changing the displayed percentage
+  const ZOOM_MULTIPLIER = 0.15; // Adjust this value as needed (0.25 = 1/4 of the displayed zoom)
+
+  const [scale, setScale] = useState(1 * ZOOM_MULTIPLIER);
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [canPan, setCanPan] = useState(false);
@@ -187,9 +208,6 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     [characterSet]
   );
 
-  // Add a ref for the main container to manage focus
-  const mainContainerRef = useRef<HTMLDivElement | null>(null);
-
   // Check if canvas is larger than viewport and calculate canPan without directly setting state
   const checkCanPan = useCallback(() => {
     if (!canvasRef.current || !viewportRef.current) return false;
@@ -208,9 +226,9 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
 
   // Reset view to original position and scale
   const resetView = useCallback(() => {
-    setScale(1);
+    setScale(1 * ZOOM_MULTIPLIER);
     setPanOffset({ x: 0, y: 0 });
-  }, []);
+  }, [ZOOM_MULTIPLIER]);
 
   // Handle image upload
   const handleImageUpload = useCallback(
@@ -406,12 +424,15 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     (zoomIn: boolean) => {
       // Change by exactly 10 percentage points (0.1 absolute change)
       const zoomChange = zoomIn ? 0.1 : -0.1;
-      const newScale = Math.max(0.1, Math.min(5, scale + zoomChange));
+      // Apply the multiplier to the actual scale but not to the min/max checks
+      const newScale =
+        Math.max(0.1, Math.min(5, scale / ZOOM_MULTIPLIER + zoomChange)) *
+        ZOOM_MULTIPLIER;
 
       // Only update scale - the effect above will handle recalculating canPan
       setScale(newScale);
     },
-    [scale]
+    [scale, ZOOM_MULTIPLIER]
   );
 
   // Handle wheel event for zoom
@@ -696,17 +717,18 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
             <div className="flex items-center bg-gray-800 rounded px-2 py-1">
               <button
                 onClick={handleControlClick(() => handleZoom(false))}
-                className="text-white p-0.5 text-lg hover:text-gray-300"
+                className="text-white p-0.5 text-lg font-bold hover:text-gray-300"
                 aria-label="Zoom out by 10%"
               >
                 −
               </button>
               <span className="mx-2 text-sm w-12 text-center">
-                {Math.round(scale * 100)}%
+                {/* Display the percentage without the multiplier */}
+                {Math.round((scale / ZOOM_MULTIPLIER) * 100)}%
               </span>
               <button
                 onClick={handleControlClick(() => handleZoom(true))}
-                className="text-white p-0.5 text-lg hover:text-gray-300"
+                className="text-white p-0.5 text-lg font-bold hover:text-gray-300"
                 aria-label="Zoom in by 10%"
               >
                 +
