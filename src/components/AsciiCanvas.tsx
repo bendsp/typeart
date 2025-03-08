@@ -1022,29 +1022,56 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     lastTouchDistance.current = null;
   }, []);
 
-  // Adjust brightness
-  const handleBrightnessChange = useCallback((value: number) => {
-    setRenderOptions((prev) => ({
-      ...prev,
-      brightness: value,
-    }));
-  }, []);
+  // Add temporary states for sliders
+  const [tempSize, setTempSize] = useState(initialSize);
+  const [tempBrightness, setTempBrightness] = useState(0);
+  const [tempContrast, setTempContrast] = useState(0);
 
-  // Adjust contrast
-  const handleContrastChange = useCallback((value: number) => {
-    setRenderOptions((prev) => ({
-      ...prev,
-      contrast: value,
-    }));
-  }, []);
+  // Debounced update functions
+  const debouncedUpdateSize = useMemo(
+    () => debounce((value: number) => setSize(value), 150),
+    []
+  );
 
-  // Toggle invert
-  const toggleInvert = useCallback(() => {
-    setRenderOptions((prev) => ({
-      ...prev,
-      invert: !prev.invert,
-    }));
-  }, []);
+  const debouncedUpdateRenderOptions = useMemo(
+    () =>
+      debounce((options: Partial<AsciiRenderOptions>) => {
+        setRenderOptions((prev) => ({
+          ...prev,
+          ...options,
+        }));
+      }, 150),
+    []
+  );
+
+  // Handle slider changes
+  const handleSizeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = Number(e.target.value);
+    setTempSize(value);
+    debouncedUpdateSize(value);
+  };
+
+  const handleBrightnessChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = parseInt(e.target.value);
+    setTempBrightness(value);
+    debouncedUpdateRenderOptions({ brightness: value });
+  };
+
+  const handleContrastChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = parseInt(e.target.value);
+    setTempContrast(value);
+    debouncedUpdateRenderOptions({ contrast: value });
+  };
+
+  // Update temp states when actual values change
+  useEffect(() => {
+    setTempSize(size);
+  }, [size]);
+
+  useEffect(() => {
+    setTempBrightness(renderOptions.brightness);
+    setTempContrast(renderOptions.contrast);
+  }, [renderOptions.brightness, renderOptions.contrast]);
 
   // Helper function to return focus to the canvas container
   const returnFocusToCanvas = useCallback(() => {
@@ -1250,7 +1277,7 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
 
             {/* Right section: All sliders grouped */}
             <div className="space-y-2">
-              {/* Size Slider - updated range to 100-500 */}
+              {/* Size Slider - updated to use temp state */}
               <div className="flex items-center space-x-1">
                 <label className="text-gray-400 text-xs w-16">Size:</label>
                 <input
@@ -1258,19 +1285,16 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
                   min="100"
                   max="500"
                   step="5"
-                  value={size}
-                  onChange={(e) => {
-                    setSize(Number(e.target.value));
-                    // No need to return focus for sliders as they don't take focus
-                  }}
+                  value={tempSize}
+                  onChange={handleSizeChange}
                   onMouseUp={returnFocusToCanvas}
                   onTouchEnd={returnFocusToCanvas}
                   className="flex-1 h-4"
                 />
-                <span className="text-gray-400 text-xs w-10">{size}</span>
+                <span className="text-gray-400 text-xs w-10">{tempSize}</span>
               </div>
 
-              {/* Brightness */}
+              {/* Brightness - updated to use temp state */}
               <div className="flex items-center space-x-1">
                 <label className="text-gray-400 text-xs w-16">
                   Brightness:
@@ -1279,38 +1303,34 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
                   type="range"
                   min="-100"
                   max="100"
-                  value={renderOptions.brightness}
-                  onChange={(e) =>
-                    handleBrightnessChange(parseInt(e.target.value))
-                  }
+                  value={tempBrightness}
+                  onChange={handleBrightnessChange}
                   onMouseUp={returnFocusToCanvas}
                   onTouchEnd={returnFocusToCanvas}
                   className="flex-1 h-4"
                   aria-label="Adjust brightness"
                 />
                 <span className="text-gray-400 text-xs w-10">
-                  {renderOptions.brightness}
+                  {tempBrightness}
                 </span>
               </div>
 
-              {/* Contrast */}
+              {/* Contrast - updated to use temp state */}
               <div className="flex items-center space-x-1">
                 <label className="text-gray-400 text-xs w-16">Contrast:</label>
                 <input
                   type="range"
                   min="-100"
                   max="100"
-                  value={renderOptions.contrast}
-                  onChange={(e) =>
-                    handleContrastChange(parseInt(e.target.value))
-                  }
+                  value={tempContrast}
+                  onChange={handleContrastChange}
                   onMouseUp={returnFocusToCanvas}
                   onTouchEnd={returnFocusToCanvas}
                   className="flex-1 h-4"
                   aria-label="Adjust contrast"
                 />
                 <span className="text-gray-400 text-xs w-10">
-                  {renderOptions.contrast}
+                  {tempContrast}
                 </span>
               </div>
             </div>
