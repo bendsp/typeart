@@ -13,15 +13,44 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "typeArt",
-  description: "Paint with text - Ben Desprets",
+  title: "typeArt - ASCII Art",
+  description: "Turn images into beautiful ASCII art with filters and styles.",
+  metadataBase: new URL("https://typeart.desprets.net"),
+  openGraph: {
+    title: "typeArt - ASCII Art",
+    description: "Turn images into beautiful ASCII art with filters and styles",
+    url: "https://typeart.desprets.net",
+    siteName: "typeArt",
+    images: [
+      {
+        url: "/typeArt-logo.png",
+        width: 800,
+        height: 600,
+        alt: "typeArt Logo",
+      },
+    ],
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "typeArt - ASCII Art",
+    description: "Turn images into beautiful ASCII art with filters and styles",
+    images: ["/typeArt-logo.png"],
+    creator: "@bendsp",
+  },
+  icons: {
+    icon: "/typeArt-logo.png",
+    shortcut: "/typeArt-logo.png",
+    apple: "/typeArt-logo.png",
+  },
 };
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
   return (
     <html lang="en">
       <body

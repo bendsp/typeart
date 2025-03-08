@@ -50,7 +50,7 @@ export default function Home() {
           rel="noopener noreferrer"
           className="text-white hover:text-blue-300 transition-colors flex items-center"
         >
-          <span>Ben Desprets - 2025</span>
+          <span>Ben Desprets </span>
           <svg
             className="ml-1 w-3 h-3"
             fill="currentColor"
