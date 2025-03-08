@@ -248,10 +248,37 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     if (!canvasRef.current) return;
 
     try {
+      // Create a temporary canvas for the export with reduced resolution
+      const exportCanvas = document.createElement("canvas");
+      const originalCanvas = canvasRef.current;
+
+      // Reduce resolution to 25% of original (halved twice)
+      const exportWidth = Math.floor(originalCanvas.width * 0.25);
+      const exportHeight = Math.floor(originalCanvas.height * 0.25);
+
+      exportCanvas.width = exportWidth;
+      exportCanvas.height = exportHeight;
+
+      // Get context and set black background
+      const exportCtx = exportCanvas.getContext("2d", { alpha: false });
+      if (!exportCtx) return;
+
+      // Fill with black background
+      exportCtx.fillStyle = "black";
+      exportCtx.fillRect(0, 0, exportWidth, exportHeight);
+
+      // Draw the original canvas content onto the export canvas
+      exportCtx.drawImage(originalCanvas, 0, 0, exportWidth, exportHeight);
+
+      // Create download link with compression
       const link = document.createElement("a");
-      link.download = "ascii-art.png";
-      link.href = canvasRef.current.toDataURL("image/png");
+      link.download = "typeArt.png";
+      // Use compression quality of 0.8 (80%)
+      link.href = exportCanvas.toDataURL("image/png", 0.8);
       link.click();
+
+      // Clean up
+      exportCanvas.remove();
     } catch (err) {
       console.error("Failed to export image:", err);
       if (onError && err instanceof Error) {
