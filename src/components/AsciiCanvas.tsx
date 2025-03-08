@@ -20,8 +20,8 @@ function debounce<T extends (...args: any[]) => any>(
   };
 }
 
-const CHAR_WIDTH = 24;
-const CHAR_HEIGHT = 48;
+const CHAR_WIDTH = 12;
+const CHAR_HEIGHT = 24;
 const CHAR_ASPECT_RATIO = CHAR_WIDTH / CHAR_HEIGHT;
 
 // Default character set, from darkest to lightest
@@ -50,6 +50,31 @@ interface AsciiRenderOptions {
   contrast: number;
   invert: boolean;
 }
+
+// Define export size options
+interface ExportSize {
+  name: string;
+  scale: number;
+}
+
+const EXPORT_SIZES: ExportSize[] = [
+  { name: "small", scale: 0.15 },
+  { name: "medium", scale: 0.25 },
+  { name: "large", scale: 0.5 },
+];
+
+// Define export formats
+interface ExportFormat {
+  extension: string;
+  mimeType: string;
+  label: string;
+}
+
+const EXPORT_FORMATS: ExportFormat[] = [
+  { extension: "png", mimeType: "image/png", label: "PNG (Sharp)" },
+  { extension: "jpg", mimeType: "image/jpeg", label: "JPG (Smaller)" },
+  { extension: "webp", mimeType: "image/webp", label: "WebP (lmao)" },
+];
 
 // Convert image to ASCII art and render on the canvas
 const drawAscii = (
@@ -202,6 +227,19 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     invert: false,
   });
 
+  // Add export dialog state
+  const [showExportDialog, setShowExportDialog] = useState(false);
+  const [exportSize, setExportSize] = useState<ExportSize>(EXPORT_SIZES[1]); // Medium by default
+  const [exportFilename, setExportFilename] = useState("typeArt");
+  const [exportFormat, setExportFormat] = useState<ExportFormat>(
+    EXPORT_FORMATS[0]
+  ); // PNG by default
+
+  // For calculating and storing export resolutions
+  const [exportResolutions, setExportResolutions] = useState<
+    Record<string, string>
+  >({});
+
   // Get the selected character set
   const asciiChars = useMemo(
     () => ASCII_PRESETS[characterSet] || DEFAULT_ASCII_CHARS,
@@ -243,49 +281,92 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     []
   );
 
-  // Export the ASCII art as an image
-  const exportAsImage = useCallback(() => {
-    if (!canvasRef.current) return;
+  // Calculate export resolutions based on current canvas dimensions
+  const calculateExportResolutions = useCallback(() => {
+    if (!canvasRef.current) return {};
 
-    try {
-      // Create a temporary canvas for the export with reduced resolution
-      const exportCanvas = document.createElement("canvas");
-      const originalCanvas = canvasRef.current;
+    const canvasWidth = canvasRef.current.width;
+    const canvasHeight = canvasRef.current.height;
 
-      // Reduce resolution to 25% of original (halved twice)
-      const exportWidth = Math.floor(originalCanvas.width * 0.25);
-      const exportHeight = Math.floor(originalCanvas.height * 0.25);
+    const resolutions: Record<string, string> = {};
 
-      exportCanvas.width = exportWidth;
-      exportCanvas.height = exportHeight;
+    EXPORT_SIZES.forEach((size) => {
+      const width = Math.round(canvasWidth * size.scale);
+      const height = Math.round(canvasHeight * size.scale);
+      resolutions[size.name] = `${width}×${height}`;
+    });
 
-      // Get context and set black background
-      const exportCtx = exportCanvas.getContext("2d", { alpha: false });
-      if (!exportCtx) return;
+    return resolutions;
+  }, []);
 
-      // Fill with black background
-      exportCtx.fillStyle = "black";
-      exportCtx.fillRect(0, 0, exportWidth, exportHeight);
+  // Export the ASCII art as an image with the selected size and filename
+  const exportAsImage = useCallback(
+    (sizeScale: number, filename: string, format: ExportFormat) => {
+      if (!canvasRef.current) return;
 
-      // Draw the original canvas content onto the export canvas
-      exportCtx.drawImage(originalCanvas, 0, 0, exportWidth, exportHeight);
+      try {
+        // Create a temporary canvas for the export with reduced resolution
+        const exportCanvas = document.createElement("canvas");
+        const originalCanvas = canvasRef.current;
 
-      // Create download link with compression
-      const link = document.createElement("a");
-      link.download = "typeArt.png";
-      // Use compression quality of 0.8 (80%)
-      link.href = exportCanvas.toDataURL("image/png", 0.8);
-      link.click();
+        // Use the selected size scale
+        const exportWidth = Math.floor(originalCanvas.width * sizeScale);
+        const exportHeight = Math.floor(originalCanvas.height * sizeScale);
 
-      // Clean up
-      exportCanvas.remove();
-    } catch (err) {
-      console.error("Failed to export image:", err);
-      if (onError && err instanceof Error) {
-        onError(err);
+        exportCanvas.width = exportWidth;
+        exportCanvas.height = exportHeight;
+
+        // Get context and set black background
+        const exportCtx = exportCanvas.getContext("2d", { alpha: false });
+        if (!exportCtx) return;
+
+        // Fill with black background
+        exportCtx.fillStyle = "black";
+        exportCtx.fillRect(0, 0, exportWidth, exportHeight);
+
+        // Draw the original canvas content onto the export canvas
+        exportCtx.drawImage(originalCanvas, 0, 0, exportWidth, exportHeight);
+
+        // Create download link with compression
+        const link = document.createElement("a");
+        link.download = `${filename}.${format.extension}`;
+
+        // Use appropriate quality based on format
+        const quality = format.extension === "png" ? 0.8 : 0.9;
+        link.href = exportCanvas.toDataURL(format.mimeType, quality);
+        link.click();
+
+        // Clean up
+        exportCanvas.remove();
+      } catch (err) {
+        console.error("Failed to export image:", err);
+        if (onError && err instanceof Error) {
+          onError(err);
+        }
       }
-    }
-  }, [onError]);
+    },
+    [onError]
+  );
+
+  // Handle export button click - show dialog instead of exporting directly
+  const handleExportClick = useCallback(() => {
+    // Only allow export if an image is loaded
+    if (!image) return;
+
+    setExportResolutions(calculateExportResolutions());
+    setShowExportDialog(true);
+  }, [calculateExportResolutions, image]);
+
+  // Handle export confirmation from dialog
+  const handleExportConfirm = useCallback(() => {
+    exportAsImage(exportSize.scale, exportFilename, exportFormat);
+    setShowExportDialog(false);
+  }, [exportAsImage, exportSize.scale, exportFilename, exportFormat]);
+
+  // Handle export dialog close
+  const handleExportCancel = useCallback(() => {
+    setShowExportDialog(false);
+  }, []);
 
   // Export the ASCII art as text
   const exportAsText = useCallback(() => {
@@ -808,9 +889,14 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
                   Upload Image
                 </label>
                 <button
-                  onClick={handleControlClick(exportAsImage)}
-                  className="px-2 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-xs flex-1"
-                  title="Export as PNG"
+                  onClick={handleControlClick(handleExportClick)}
+                  className={`px-2 py-1 ${
+                    image
+                      ? "bg-green-600 hover:bg-green-700"
+                      : "bg-gray-600 opacity-50 cursor-not-allowed"
+                  } text-white rounded text-xs flex-1`}
+                  title={image ? "Export as Image" : "Load an image first"}
+                  disabled={!image}
                 >
                   Export
                 </button>
@@ -952,6 +1038,89 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
         </div>
       )}
 
+      {/* Export Dialog */}
+      {showExportDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 text-white p-6 rounded-lg shadow-xl max-w-md w-full">
+            <h2 className="text-xl font-bold mb-4">Export Options</h2>
+
+            {/* Size Selection */}
+            <div className="mb-4">
+              <label className="block text-gray-300 mb-2">Image Size</label>
+              <div className="grid grid-cols-3 gap-2">
+                {EXPORT_SIZES.map((size) => (
+                  <button
+                    key={size.name}
+                    className={`p-2 rounded ${
+                      exportSize.name === size.name
+                        ? "bg-blue-600 text-white"
+                        : "bg-gray-700 text-gray-200 hover:bg-gray-600"
+                    }`}
+                    onClick={() => setExportSize(size)}
+                  >
+                    <div className="font-medium capitalize">{size.name}</div>
+                    <div className="text-xs opacity-75">
+                      {exportResolutions[size.name] || ""}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Filename Input and Format Selection */}
+            <div className="mb-6">
+              <label htmlFor="filename" className="block text-gray-300 mb-2">
+                Filename
+              </label>
+              <div className="flex items-center">
+                <input
+                  id="filename"
+                  type="text"
+                  value={exportFilename}
+                  onChange={(e) => setExportFilename(e.target.value)}
+                  className="bg-gray-700 text-white p-2 rounded-l flex-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <select
+                  value={exportFormat.extension}
+                  onChange={(e) => {
+                    const selectedFormat = EXPORT_FORMATS.find(
+                      (format) => format.extension === e.target.value
+                    );
+                    if (selectedFormat) setExportFormat(selectedFormat);
+                  }}
+                  className="bg-gray-700 text-white p-2 rounded-r border-l border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {EXPORT_FORMATS.map((format) => (
+                    <option key={format.extension} value={format.extension}>
+                      .{format.extension}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="mt-1 text-xs text-gray-400">
+                {exportFormat.label}
+              </div>
+            </div>
+
+            {/* Dialog Buttons */}
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={handleExportCancel}
+                className="px-4 py-2 bg-gray-700 text-white rounded hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleExportConfirm}
+                className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500"
+              >
+                Export
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Main Canvas Container */}
       <div
         ref={viewportRef}
@@ -1035,7 +1204,7 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
               viewBox="0 0 16 16"
               xmlns="http://www.w3.org/2000/svg"
             >
-              <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
+              <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
             </svg>
           </a>
         </div>
