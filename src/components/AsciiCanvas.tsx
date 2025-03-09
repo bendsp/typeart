@@ -7,7 +7,7 @@ import React, {
   useState,
 } from "react";
 
-// Custom debounce implementation to avoid lodash dependency
+// A custom debounce implementation that delays function execution until after a specified wait time
 function debounce<T extends (...args: any[]) => any>(
   func: T,
   wait: number
@@ -88,65 +88,46 @@ const EMOJI_MAP: EmojiMap = {
   gray: ["🖤", "🌑", "🕶️", "🏴", "🐺", "🐘", "🪨", "⚙️", "🩶", "⚪"],
 };
 
-// Function to find the closest color match - improved color detection
+// Determines the closest matching emoji based on pixel color and brightness values
 function findClosestColorEmoji(
   r: number,
   g: number,
   b: number,
   brightness: number
 ): string {
-  // Determine dominant color with improved detection
   const max = Math.max(r, g, b);
   let dominantColor: string;
-  const threshold = 30; // Threshold for considering a pixel as grayscale
+  const threshold = 30;
 
-  // Brightness index for 10 levels, properly mapped
   const brightnessIndex = Math.min(9, Math.floor(brightness / 25.5));
 
-  // Check for white/very bright pixels first
   if (r > 220 && g > 220 && b > 220) {
-    // Very bright pixels should use the brightest emojis
-    return EMOJI_MAP.gray[9]; // Whitest emoji
+    return EMOJI_MAP.gray[9];
   }
 
-  // Check for very dark pixels
   if (max < 30) {
-    return EMOJI_MAP.gray[0]; // Very dark, return darkest gray emoji
+    return EMOJI_MAP.gray[0];
   }
 
-  // Check for grayscale (when R, G, B are close to each other)
   if (
     Math.abs(r - g) < threshold &&
     Math.abs(r - b) < threshold &&
     Math.abs(g - b) < threshold
   ) {
-    dominantColor = "gray"; // If r, g, b values are close, it's a gray tone
-  }
-  // Improved yellow detection (yellow is often underrepresented)
-  else if (r > 180 && g > 180 && b < r - threshold && b < g - threshold) {
+    dominantColor = "gray";
+  } else if (r > 180 && g > 180 && b < r - threshold && b < g - threshold) {
     dominantColor = "yellow";
-  }
-  // Red detection
-  else if (r === max && r > g + threshold && r > b + threshold) {
+  } else if (r === max && r > g + threshold && r > b + threshold) {
     dominantColor = "red";
-  }
-  // Green detection
-  else if (g === max && g > r + threshold && g > b + threshold) {
+  } else if (g === max && g > r + threshold && g > b + threshold) {
     dominantColor = "green";
-  }
-  // Blue detection
-  else if (b === max && b > r + threshold && b > g + threshold) {
+  } else if (b === max && b > r + threshold && b > g + threshold) {
     dominantColor = "blue";
-  }
-  // Orange detection (more red than green, but both high)
-  else if (r === max && g > r - threshold && g > b + threshold) {
+  } else if (r === max && g > r - threshold && g > b + threshold) {
     dominantColor = "orange";
-  }
-  // Purple detection
-  else if (r === max && b === max && r > g + threshold) {
+  } else if (r === max && b === max && r > g + threshold) {
     dominantColor = "purple";
   } else {
-    // If we can't determine confidently, use the largest component
     if (r === max) {
       if (g > b) dominantColor = "orange";
       else dominantColor = "purple";
@@ -158,7 +139,6 @@ function findClosestColorEmoji(
     }
   }
 
-  // Return the emoji at the appropriate brightness index
   return EMOJI_MAP[dominantColor][brightnessIndex];
 }
 
@@ -201,7 +181,7 @@ const EXPORT_FORMATS: ExportFormat[] = [
   { extension: "webp", mimeType: "image/webp", label: "WebP (lmao)" },
 ];
 
-// Utility function to convert HSL to RGB
+// Converts HSL color values to RGB color space
 function hslToRgb(h: number, s: number, l: number): [number, number, number] {
   const c = (1 - Math.abs(2 * l - 1)) * s;
   const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
@@ -243,7 +223,7 @@ function hslToRgb(h: number, s: number, l: number): [number, number, number] {
   ];
 }
 
-// Modify the drawAscii function to handle emoji mode
+// Renders an image as ASCII art or emoji art with various filters and effects
 const drawAscii = (
   image: HTMLImageElement,
   size: number,
@@ -255,9 +235,7 @@ const drawAscii = (
   renderMode: RenderMode = "ascii"
 ) => {
   const aspectRatio = image.width / image.height;
-
-  // Adjust for emoji aspect ratio when in emoji mode
-  const emojiAspectRatio = 1.0; // Emojis are roughly square
+  const emojiAspectRatio = 1.0;
   const effectiveAspectRatio =
     renderMode === "emoji" ? emojiAspectRatio : CHAR_ASPECT_RATIO;
 
@@ -272,7 +250,6 @@ const drawAscii = (
   tempCanvas.height = height;
   ctx.drawImage(image, 0, 0, width, height);
 
-  // Apply contrast and brightness adjustments
   if (options.contrast !== 0 || options.brightness !== 0 || options.invert) {
     const imageData = ctx.getImageData(0, 0, width, height);
     const data = imageData.data;
@@ -281,7 +258,6 @@ const drawAscii = (
 
     for (let i = 0; i < data.length; i += 4) {
       if (options.contrast !== 0 || options.brightness !== 0) {
-        // Apply contrast and brightness
         data[i] = Math.max(
           0,
           Math.min(255, factor * (data[i] - 128) + 128 + options.brightness)
@@ -296,7 +272,6 @@ const drawAscii = (
         );
       }
 
-      // Apply invert if needed
       if (options.invert) {
         data[i] = 255 - data[i];
         data[i + 1] = 255 - data[i + 1];
@@ -309,7 +284,6 @@ const drawAscii = (
 
   const imageData = ctx.getImageData(0, 0, width, height).data;
 
-  // Different cell sizes for emoji vs ASCII
   const cellWidth = renderMode === "emoji" ? 32 : CHAR_WIDTH;
   const cellHeight = renderMode === "emoji" ? 32 : CHAR_HEIGHT;
 
@@ -322,15 +296,12 @@ const drawAscii = (
 
   if (!outputCtx) return;
 
-  // Disable image smoothing for crisp rendering
   outputCtx.imageSmoothingEnabled = false;
   outputCtx.clearRect(0, 0, outputCanvas.width, outputCanvas.height);
 
-  // Set canvas background
   outputCtx.fillStyle = backgroundColor;
   outputCtx.fillRect(0, 0, outputCanvas.width, outputCanvas.height);
 
-  // Choose font based on mode
   if (renderMode === "emoji") {
     outputCtx.font = `${cellHeight - 2}px Arial`;
     outputCtx.textBaseline = "middle";
@@ -350,19 +321,15 @@ const drawAscii = (
       const brightness = 0.299 * r + 0.587 * g + 0.114 * b;
 
       if (renderMode === "emoji") {
-        // Special handling for emoji rendering - use color and brightness
         let emoji: string;
 
-        // Select emoji based on the color filter
         switch (colorFilter) {
           case "monochrome":
-            // Use grayscale emojis for monochrome
             const grayIndex = Math.min(9, Math.floor(brightness / 25.5));
             emoji = EMOJI_MAP.gray[grayIndex];
             break;
 
           case "inverted":
-            // Invert brightness for emoji selection
             const invertedBrightness = 255 - brightness;
             emoji = findClosestColorEmoji(
               255 - r,
@@ -373,7 +340,6 @@ const drawAscii = (
             break;
 
           case "vintage":
-            // Sepia tone for vintage look
             const sepiaR = Math.min(255, r * 0.393 + g * 0.769 + b * 0.189);
             const sepiaG = Math.min(255, r * 0.349 + g * 0.686 + b * 0.168);
             const sepiaB = Math.min(255, r * 0.272 + g * 0.534 + b * 0.131);
@@ -386,7 +352,6 @@ const drawAscii = (
             break;
 
           case "pastel":
-            // Pastel colors - soften and brighten
             const pastelR = Math.min(255, r + (255 - r) * 0.5);
             const pastelG = Math.min(255, g + (255 - g) * 0.5);
             const pastelB = Math.min(255, b + (255 - b) * 0.5);
@@ -399,15 +364,11 @@ const drawAscii = (
             break;
 
           case "matrix":
-            // Green on black Matrix style
-            // Force green emojis with brightness based on original pixel
             const matrixIndex = Math.min(9, Math.floor(brightness / 25.5));
             emoji = EMOJI_MAP.green[matrixIndex];
             break;
 
           case "hell":
-            // Hell style - fiery reds and oranges
-            // Prioritize red/orange emojis
             const hellR = Math.min(255, r * 1.5);
             const hellG = Math.min(255, g * 0.7);
             const hellB = Math.min(255, b * 0.3);
@@ -415,57 +376,48 @@ const drawAscii = (
               0.299 * hellR + 0.587 * hellG + 0.114 * hellB;
 
             if (hellBrightness > 128) {
-              // Brighter hell pixels use orange emojis
               const orangeIndex = Math.min(
                 9,
                 Math.floor((hellBrightness - 128) / 12.75)
               );
               emoji = EMOJI_MAP.orange[orangeIndex];
             } else {
-              // Darker hell pixels use red emojis
               const redIndex = Math.min(9, Math.floor(hellBrightness / 12.75));
               emoji = EMOJI_MAP.red[redIndex];
             }
             break;
 
           case "blueprint":
-            // Blueprint - technical drawing blue and white
             const blueprintIndex = Math.min(9, Math.floor(brightness / 25.5));
             emoji = EMOJI_MAP.blue[blueprintIndex];
             break;
 
           case "@basedanarki vision (heat)":
-            // Heat map visualization
             if (brightness > 192) {
-              // Hottest areas - yellow/white
               const yellowIndex = Math.min(
                 9,
                 5 + Math.floor((brightness - 192) / 12.75)
               );
               emoji = EMOJI_MAP.yellow[yellowIndex];
             } else if (brightness > 128) {
-              // Hot areas - orange/red
               const orangeIndex = Math.min(
                 9,
                 Math.floor((brightness - 128) / 12.75)
               );
               emoji = EMOJI_MAP.orange[orangeIndex];
             } else if (brightness > 64) {
-              // Warm areas - purple/magenta
               const purpleIndex = Math.min(
                 9,
                 Math.floor((brightness - 64) / 12.75)
               );
               emoji = EMOJI_MAP.purple[purpleIndex];
             } else {
-              // Cool areas - blue/dark
               const blueIndex = Math.min(9, Math.floor(brightness / 12.75));
               emoji = EMOJI_MAP.blue[blueIndex];
             }
             break;
 
           case "rainbow":
-            // Rainbow effect - color changes horizontally
             const rainbowPosition = Math.floor((x / width) * 6) % 6;
             let rainbowColor: string;
 
@@ -497,17 +449,14 @@ const drawAscii = (
             break;
 
           case "glitch":
-            // Digital glitch effect - randomly shift colors
             const glitchChance = Math.random();
             let glitchR = r,
               glitchG = g,
               glitchB = b;
 
             if (glitchChance > 0.9) {
-              // Channel swap
               [glitchR, glitchG, glitchB] = [glitchB, glitchR, glitchG];
             } else if (glitchChance > 0.8) {
-              // Shift values
               glitchR = Math.max(
                 0,
                 Math.min(255, r + Math.floor(Math.random() * 100) - 50)
@@ -531,46 +480,38 @@ const drawAscii = (
             break;
 
           case "cyberpunk":
-            // Cyberpunk style - neon blue and pink/purple contrast
             const cyberValue = brightness / 255;
 
             if (cyberValue > 0.7) {
-              // Highlights - cyan/blue
               const blueIndex = Math.min(
                 9,
                 5 + Math.floor((cyberValue - 0.7) * 33.3)
               );
               emoji = EMOJI_MAP.blue[blueIndex];
             } else if (cyberValue > 0.3) {
-              // Midtones - purple
               const purpleIndex = Math.min(
                 9,
                 Math.floor((cyberValue - 0.3) * 25)
               );
               emoji = EMOJI_MAP.purple[purpleIndex];
             } else {
-              // Shadows - dark blue/black
               const blueIndex = Math.min(4, Math.floor(cyberValue * 16.7));
               emoji = EMOJI_MAP.blue[blueIndex];
             }
             break;
 
           case "retrowave":
-            // Retrowave - bold pink, purple, blue gradients with sunset effect
-            const retroY = y / height; // Vertical position for gradient
+            const retroY = y / height;
             let retroIndex;
 
-            // Create a sunset-style gradient effect
             if (retroY < 0.4) {
-              // Top section - pinks and purples (sunset sky)
               retroIndex = Math.min(9, Math.floor(brightness / 25.5));
               if (retroIndex > 5) {
                 emoji = EMOJI_MAP.purple[retroIndex];
               } else {
-                emoji = EMOJI_MAP.red[retroIndex + 4]; // Use pink/red tones
+                emoji = EMOJI_MAP.red[retroIndex + 4];
               }
             } else if (retroY < 0.7) {
-              // Horizon line with sun - oranges and yellows
               retroIndex = Math.min(9, Math.floor(brightness / 25.5));
               if (retroIndex > 6) {
                 emoji = EMOJI_MAP.yellow[retroIndex];
@@ -578,59 +519,47 @@ const drawAscii = (
                 emoji = EMOJI_MAP.orange[retroIndex + 3];
               }
             } else {
-              // Bottom section - blue/purple grid
               retroIndex = Math.min(9, Math.floor(brightness / 25.5));
               if (brightness > 170) {
-                // Bright grid lines
                 emoji = EMOJI_MAP.purple[Math.min(9, retroIndex + 2)];
               } else {
-                // Dark background
                 emoji = EMOJI_MAP.blue[Math.max(0, retroIndex - 2)];
               }
             }
             break;
 
           default:
-            // Original and any other filters - use color-based emoji selection
             emoji = findClosestColorEmoji(r, g, b, brightness);
             break;
         }
 
-        // Center the emoji in its cell
         const centerX = x * cellWidth + cellWidth / 2;
         const centerY = y * cellHeight + cellHeight / 2;
         outputCtx.fillText(emoji, centerX, centerY);
       } else {
-        // Regular ASCII character rendering
         const charIndex = Math.floor(
           (brightness / 255) * (characterSet.length - 1)
         );
         const char = characterSet[charIndex];
 
-        // Apply color based on the selected filter
         switch (colorFilter) {
           case "original":
-            // Original colors from image
             outputCtx.fillStyle = `rgb(${r}, ${g}, ${b})`;
             break;
           case "monochrome":
-            // Black and white
             const gray = Math.round(brightness);
             outputCtx.fillStyle = `rgb(${gray}, ${gray}, ${gray})`;
             break;
           case "vintage":
-            // Vintage sepia tone
             const sepiaR = Math.min(255, r * 0.393 + g * 0.769 + b * 0.189);
             const sepiaG = Math.min(255, r * 0.349 + g * 0.686 + b * 0.168);
             const sepiaB = Math.min(255, r * 0.272 + g * 0.534 + b * 0.131);
             outputCtx.fillStyle = `rgb(${sepiaR}, ${sepiaG}, ${sepiaB})`;
             break;
           case "inverted":
-            // Inverted colors
             outputCtx.fillStyle = `rgb(${255 - r}, ${255 - g}, ${255 - b})`;
             break;
           case "matrix":
-            // Matrix green (brighter for brighter pixels)
             const intensity = Math.round(brightness);
             outputCtx.fillStyle = `rgb(0, ${Math.min(
               255,
@@ -638,62 +567,51 @@ const drawAscii = (
             )}, 0)`;
             break;
           case "hell":
-            // Hell style (fiery reds and oranges)
             const hellBrightness = brightness / 255;
             if (hellBrightness > 0.7) {
-              // Bright areas: yellow to white
               outputCtx.fillStyle = `rgb(255, ${Math.round(
                 200 + hellBrightness * 55
               )}, ${Math.round(50 + hellBrightness * 50)})`;
             } else if (hellBrightness > 0.4) {
-              // Mid tones: orange to yellow
               outputCtx.fillStyle = `rgb(255, ${Math.round(
                 50 + hellBrightness * 150
               )}, 0)`;
             } else {
-              // Dark areas: deep red to orange
               outputCtx.fillStyle = `rgb(${Math.round(
                 120 + hellBrightness * 135
               )}, ${Math.round(hellBrightness * 50)}, 0)`;
             }
             break;
           case "blueprint":
-            // Blueprint technical drawing style
             const bpBrightness = brightness / 255;
-            const bpValue = Math.round(210 + bpBrightness * 45); // Bright lines on blue background
+            const bpValue = Math.round(210 + bpBrightness * 45);
             outputCtx.fillStyle = `rgb(${bpValue * bpBrightness}, ${
               bpValue * bpBrightness
             }, ${100 + bpBrightness * 155})`;
             break;
           case "@basedanarki vision (heat)":
-            // Adjusted Thermal imaging heat map
             const heatLevel = brightness / 255;
             if (heatLevel > 0.75) {
-              // Hottest: white to yellow
               outputCtx.fillStyle = `rgb(255, 255, ${Math.round(
                 heatLevel * 255
               )})`;
             } else if (heatLevel > 0.5) {
-              // Hot: yellow to red
               outputCtx.fillStyle = `rgb(255, ${
                 Math.round(heatLevel * 510) - 255
               }, 0)`;
             } else if (heatLevel > 0.25) {
-              // Warm: red to purple
               outputCtx.fillStyle = `rgb(${
                 Math.round(heatLevel * 510) - 127
               }, 0, ${Math.round((1 - heatLevel) * 255)})`;
             } else {
-              // Cool: purple to blue/black
               outputCtx.fillStyle = `rgb(0, 0, ${
                 Math.round(heatLevel * 510) - 127
               })`;
             }
             break;
           case "rainbow":
-            // Old neon effect with full rainbow variation
             const rainbowIntensity = brightness / 255;
-            const hue = (x / width) * 360; // Full hue range
+            const hue = (x / width) * 360;
             const [rainbowR, rainbowG, rainbowB] = hslToRgb(
               hue,
               1,
@@ -702,18 +620,14 @@ const drawAscii = (
             outputCtx.fillStyle = `rgb(${rainbowR}, ${rainbowG}, ${rainbowB})`;
             break;
           case "glitch":
-            // Enhanced Digital glitch effect - more distortion, less noise
             let glitchR = r;
             let glitchG = g;
             let glitchB = b;
 
-            // Stronger channel shifting
-            const shiftAmount = 70; // Increased from 50
+            const shiftAmount = 70;
 
-            // Horizontal line distortion - offset pixels horizontally
-            const horizontalOffset = Math.floor(Math.random() * 7) - 3; // -3 to +3 pixel shift
+            const horizontalOffset = Math.floor(Math.random() * 7) - 3;
             if (horizontalOffset !== 0 && Math.random() > 0.7) {
-              // Get color from offset position when possible
               const offsetX = Math.max(
                 0,
                 Math.min(width - 1, x + horizontalOffset)
@@ -724,7 +638,6 @@ const drawAscii = (
               glitchB = imageData[offsetIdx + 2];
             }
 
-            // Channel shifting with more extreme values
             if (Math.random() > 0.6) {
               glitchR = Math.max(
                 0,
@@ -744,7 +657,6 @@ const drawAscii = (
               );
             }
 
-            // Channel bleeding - one channel leaks into others
             if (Math.random() > 0.85) {
               const dominantChannel = Math.floor(Math.random() * 3);
               if (dominantChannel === 0) {
@@ -759,12 +671,10 @@ const drawAscii = (
               }
             }
 
-            // Occasional color channel swapping (less frequent)
             if (Math.random() > 0.92) {
               [glitchR, glitchG, glitchB] = [glitchB, glitchR, glitchG];
             }
 
-            // Complete signal loss (black/white) - reduced frequency
             if (Math.random() > 0.97) {
               const lossVal = Math.random() > 0.5 ? 255 : 0;
               glitchR = glitchG = glitchB = lossVal;
@@ -773,18 +683,14 @@ const drawAscii = (
             outputCtx.fillStyle = `rgb(${glitchR}, ${glitchG}, ${glitchB})`;
             break;
           case "cyberpunk":
-            // Cyberpunk gradient based on brightness (renamed from duotone)
             const cyberpunkFactor = brightness / 255;
-            // Primary color (highlights): Teal (#00C2BA)
             const primaryR = 0;
             const primaryG = 194;
             const primaryB = 186;
-            // Secondary color (shadows): Deep Purple (#2A0057)
             const secondaryR = 42;
             const secondaryG = 0;
             const secondaryB = 87;
 
-            // Mix the two colors based on brightness
             const cyberpunkR = Math.round(
               secondaryR + (primaryR - secondaryR) * cyberpunkFactor
             );
@@ -798,27 +704,22 @@ const drawAscii = (
             outputCtx.fillStyle = `rgb(${cyberpunkR}, ${cyberpunkG}, ${cyberpunkB})`;
             break;
           case "retrowave":
-            // Retrowave color scheme
             const retrowaveFactor = brightness / 255;
             let retroR, retroG, retroB;
 
             if (retrowaveFactor > 0.8) {
-              // Highlights: Bright cyan
               retroR = 80;
               retroG = 235;
               retroB = 255;
             } else if (retrowaveFactor > 0.5) {
-              // Mid-tones: Purple/Pink
               retroR = 220;
               retroG = 50;
               retroB = 220;
             } else if (retrowaveFactor > 0.2) {
-              // Shadow mid-tones: Deep blue
               retroR = 30;
               retroG = 20;
               retroB = 180;
             } else {
-              // Deep shadows: Almost black with hint of purple
               retroR = 10;
               retroG = 5;
               retroB = 40;
@@ -828,22 +729,19 @@ const drawAscii = (
             break;
         }
 
-        // Standard text rendering
         outputCtx.fillText(char, x * cellWidth, y * cellHeight);
       }
     }
   }
 
-  // Apply CRT pattern effect for the 'glitch' filter in ASCII mode
   if (colorFilter === "glitch" && renderMode === "ascii") {
     applyCRTPattern(outputCtx, outputCanvas.width, outputCanvas.height);
   }
 
-  // Clean up
   tempCanvas.remove();
 };
 
-// Add CRT pattern effect
+// Applies a CRT scanline effect to the canvas
 const applyCRTPattern = (
   ctx: CanvasRenderingContext2D,
   width: number,
@@ -855,7 +753,7 @@ const applyCRTPattern = (
     for (let x = 0; x < width; x++) {
       const idx = (y * width + x) * 4;
       if (x % 2 === 0) {
-        data[idx] *= 0.9; // Slightly dim every other pixel for CRT effect
+        data[idx] *= 0.9;
         data[idx + 1] *= 0.9;
         data[idx + 2] *= 0.9;
       }
@@ -864,7 +762,7 @@ const applyCRTPattern = (
   ctx.putImageData(imageData, 0, 0);
 };
 
-// AsciiCanvas component renders ASCII art from an image and supports zoom & pan
+// A React component that converts images to ASCII art or emoji art with various filters and effects
 const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
   initialImage = null,
   initialSize = 200,
@@ -872,7 +770,6 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
   initialCharacterSet = "default",
   onError,
 }) => {
-  // Internal state management - no need for external setters
   const [image, setImage] = useState<string | null>(initialImage);
   const [size, setSize] = useState(initialSize);
   const [colorFilter, setColorFilter] =
@@ -888,13 +785,9 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
-
-  // Add a ref for the main container to manage focus
   const mainContainerRef = useRef<HTMLDivElement | null>(null);
 
-  // Add a zoom multiplier to compensate for larger character size
-  // This scales the actual zoom without changing the displayed percentage
-  const ZOOM_MULTIPLIER = 0.15; // Adjust this value as needed (0.25 = 1/4 of the displayed zoom)
+  const ZOOM_MULTIPLIER = 0.15;
 
   const [scale, setScale] = useState(1 * ZOOM_MULTIPLIER);
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
@@ -910,32 +803,30 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     invert: false,
   });
 
-  // Add export dialog state
   const [showExportDialog, setShowExportDialog] = useState(false);
-  const [exportSize, setExportSize] = useState<ExportSize>(EXPORT_SIZES[1]); // Medium by default
+  const [exportSize, setExportSize] = useState<ExportSize>(EXPORT_SIZES[1]);
   const [exportFilename, setExportFilename] = useState("typeArt");
   const [exportFormat, setExportFormat] = useState<ExportFormat>(
     EXPORT_FORMATS[0]
-  ); // PNG by default
+  );
 
-  // For calculating and storing export resolutions
   const [exportResolutions, setExportResolutions] = useState<
     Record<string, string>
   >({});
 
-  // Get the selected character set
+  // Get the selected character set for ASCII rendering
   const asciiChars = useMemo(
     () => ASCII_PRESETS[characterSet] || DEFAULT_ASCII_CHARS,
     [characterSet]
   );
 
-  // Reset view to original position and scale
+  // Resets the view to original position and scale
   const resetView = useCallback(() => {
     setScale(1 * ZOOM_MULTIPLIER);
     setPanOffset({ x: 0, y: 0 });
   }, [ZOOM_MULTIPLIER]);
 
-  // Handle image upload
+  // Handles image file upload from user input
   const handleImageUpload = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>) => {
       const file = event.target.files?.[0];
@@ -948,7 +839,7 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     []
   );
 
-  // Calculate export resolutions based on current canvas dimensions
+  // Calculates export resolutions based on current canvas dimensions
   const calculateExportResolutions = useCallback(() => {
     if (!canvasRef.current) return {};
 
@@ -966,7 +857,7 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     return resolutions;
   }, []);
 
-  // Get the actual background color value based on the selected type
+  // Returns the actual background color value based on the selected type
   const getBackgroundColorValue = useCallback(
     (bgType: BackgroundColor): string => {
       switch (bgType) {
@@ -979,7 +870,7 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     [customBgColor]
   );
 
-  // Export the ASCII art as an image with the selected size and filename
+  // Exports the ASCII art as an image with the selected size and format
   const exportAsImage = useCallback(
     async (sizeScale: number, filename: string, format: ExportFormat) => {
       if (!canvasRef.current) return;
@@ -989,38 +880,30 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
         const originalWidth = originalCanvas.width;
         const originalHeight = originalCanvas.height;
 
-        // Calculate export dimensions, preserving aspect ratio
         const exportWidth = originalWidth * sizeScale;
         const exportHeight = originalHeight * sizeScale;
 
-        // Create a new canvas for the export
         const exportCanvas = document.createElement("canvas");
         exportCanvas.width = exportWidth;
         exportCanvas.height = exportHeight;
 
-        // Get context and set background
         const exportCtx = exportCanvas.getContext("2d");
         if (!exportCtx) return;
 
-        // Get the actual background color for both named and custom colors
         const actualColor =
           backgroundColor === "custom" ? customBgColor : backgroundColor;
         exportCtx.fillStyle = actualColor;
         exportCtx.fillRect(0, 0, exportWidth, exportHeight);
 
-        // Draw the original canvas content onto the export canvas
         exportCtx.drawImage(originalCanvas, 0, 0, exportWidth, exportHeight);
 
-        // Create download link with compression
         const link = document.createElement("a");
         link.download = `${filename}.${format.extension}`;
 
-        // Use appropriate quality based on format
         const quality = format.extension === "png" ? 0.8 : 0.9;
         link.href = exportCanvas.toDataURL(format.mimeType, quality);
         link.click();
 
-        // Clean up
         exportCanvas.remove();
       } catch (err) {
         console.error("Failed to export image:", err);
@@ -1032,27 +915,26 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     [onError, backgroundColor, customBgColor]
   );
 
-  // Handle export button click - show dialog instead of exporting directly
+  // Shows the export dialog when export button is clicked
   const handleExportClick = useCallback(() => {
-    // Only allow export if an image is loaded
     if (!image) return;
 
     setExportResolutions(calculateExportResolutions());
     setShowExportDialog(true);
   }, [calculateExportResolutions, image]);
 
-  // Handle export confirmation from dialog
+  // Handles export confirmation from the dialog
   const handleExportConfirm = useCallback(() => {
     exportAsImage(exportSize.scale, exportFilename, exportFormat);
     setShowExportDialog(false);
   }, [exportAsImage, exportSize.scale, exportFilename, exportFormat]);
 
-  // Handle export dialog close
+  // Handles export dialog close
   const handleExportCancel = useCallback(() => {
     setShowExportDialog(false);
   }, []);
 
-  // Export the ASCII art as text
+  // Exports the ASCII art as plain text
   const exportAsText = useCallback(() => {
     if (!canvasRef.current || !imageRef.current) return;
 
@@ -1087,11 +969,9 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
         asciiText += "\n";
       }
 
-      // Copy to clipboard and offer download
       navigator.clipboard.writeText(asciiText).then(() => {
         alert("ASCII text copied to clipboard!");
 
-        // Also offer as download
         const blob = new Blob([asciiText], { type: "text/plain" });
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
@@ -1110,11 +990,10 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     }
   }, [size, asciiChars, onError]);
 
-  // Render the ASCII art with current options
+  // Renders the ASCII art with current options
   const renderAsciiArt = useCallback(() => {
     if (!imageRef.current || !canvasRef.current) return;
 
-    // Pass the actual color value, not just the type
     const actualBackgroundColor =
       backgroundColor === "custom" ? customBgColor : backgroundColor;
 
@@ -1138,7 +1017,7 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     renderMode,
   ]);
 
-  // Load image and render ASCII art
+  // Loads and processes the image when it changes
   useEffect(() => {
     if (image) {
       setLoading(true);
@@ -1165,51 +1044,45 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     }
   }, [image, renderAsciiArt, onError]);
 
-  // Re-render when options change
+  // Re-renders when options change
   useEffect(() => {
     if (imageRef.current && canvasRef.current) {
       renderAsciiArt();
     }
   }, [renderOptions, renderAsciiArt]);
 
-  // Add a flag/detector for mobile devices
+  // Detects if the device is mobile
   const isMobileDevice = useRef(
     typeof window !== "undefined" &&
       (navigator.maxTouchPoints > 0 ||
         /Android|iPhone|iPad|iPod|Windows Phone/i.test(navigator.userAgent))
   ).current;
 
-  // Simple zoom functionality with consistent 10% increments across all platforms
+  // Handles zoom in/out with consistent increments
   const handleZoom = useCallback(
     (zoomIn: boolean) => {
-      // Use 10% increment for all platforms
       const zoomChange = zoomIn ? 0.1 : -0.1;
 
-      // Apply the multiplier to the actual scale but not to the min/max checks
-      // Set minimum scale to 0.01 (1%) for mobile devices and 0.05 (5%) for desktop
       const minScale = isMobileDevice ? 0.01 : 0.05;
       const newScale =
         Math.max(minScale, Math.min(5, scale / ZOOM_MULTIPLIER + zoomChange)) *
         ZOOM_MULTIPLIER;
 
-      // Only update scale
       setScale(newScale);
     },
     [scale, ZOOM_MULTIPLIER, isMobileDevice]
   );
 
-  // Handle wheel event for zoom and pan with consistent 10% increment
+  // Handles mouse wheel events for zoom and pan
   const handleWheel = useCallback(
     (e: React.WheelEvent<HTMLDivElement>) => {
       e.preventDefault();
 
       if (e.ctrlKey || e.metaKey) {
-        // Use standard 10% zoom increment for all platforms
-        const zoomDelta = 0.1; // 10% change per wheel tick
+        const zoomDelta = 0.1;
         const zoomIn = e.deltaY < 0;
 
         const zoomChange = zoomIn ? zoomDelta : -zoomDelta;
-        // Set minimum scale to 0.01 (1%) for mobile devices and 0.05 (5%) for desktop
         const minScale = isMobileDevice ? 0.01 : 0.05;
         const newScale =
           Math.max(
@@ -1219,11 +1092,9 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
 
         setScale(newScale);
       } else {
-        // Pan without canPan check - always enable panning
         const newOffsetX = panOffset.x - e.deltaX;
         const newOffsetY = panOffset.y - e.deltaY;
 
-        // No need to check canPan, but still apply constraints if needed
         setPanOffset({
           x: newOffsetX,
           y: newOffsetY,
@@ -1233,14 +1104,13 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     [panOffset, scale, ZOOM_MULTIPLIER, isMobileDevice]
   );
 
-  // Start panning on mouse down - remove canPan check
+  // Initiates panning on mouse down
   const handleMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    // Always enable panning
     setIsPanning(true);
     lastPanPosition.current = { x: e.clientX, y: e.clientY };
   }, []);
 
-  // Handle panning movement - remove canPan check
+  // Updates pan position during mouse movement
   const handleMouseMove = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
       if (!isPanning) return;
@@ -1248,7 +1118,6 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
       const dx = e.clientX - lastPanPosition.current.x;
       const dy = e.clientY - lastPanPosition.current.y;
 
-      // No canPan check needed
       setPanOffset((prev) => ({
         x: prev.x + dx,
         y: prev.y + dy,
@@ -1259,12 +1128,12 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     [isPanning]
   );
 
-  // End panning
+  // Stops panning on mouse up
   const handleMouseUp = useCallback(() => {
     setIsPanning(false);
   }, []);
 
-  // Handle keyboard navigation - remove canPan checks
+  // Handles keyboard navigation for pan and zoom
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (
@@ -1278,33 +1147,29 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
 
       switch (e.key) {
         case "ArrowUp":
-          // Always allow panning
           setPanOffset((prev) => ({ ...prev, y: prev.y + PAN_STEP }));
           e.preventDefault();
           break;
         case "ArrowDown":
-          // Always allow panning
           setPanOffset((prev) => ({ ...prev, y: prev.y - PAN_STEP }));
           e.preventDefault();
           break;
         case "ArrowLeft":
-          // Always allow panning
           setPanOffset((prev) => ({ ...prev, x: prev.x + PAN_STEP }));
           e.preventDefault();
           break;
         case "ArrowRight":
-          // Always allow panning
           setPanOffset((prev) => ({ ...prev, x: prev.x - PAN_STEP }));
           e.preventDefault();
           break;
         case "+":
         case "=":
-          handleZoom(true); // Zoom in
+          handleZoom(true);
           e.preventDefault();
           break;
         case "-":
         case "_":
-          handleZoom(false); // Zoom out
+          handleZoom(false);
           e.preventDefault();
           break;
         case "0":
@@ -1316,7 +1181,7 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     [resetView, handleZoom]
   );
 
-  // Set up keyboard event listeners
+  // Sets up keyboard event listeners
   useEffect(() => {
     window.addEventListener("keydown", handleKeyDown);
     return () => {
@@ -1324,7 +1189,7 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     };
   }, [handleKeyDown]);
 
-  // Prevent native zoom on viewport wheel event
+  // Prevents native zoom on viewport wheel events
   useEffect(() => {
     const viewport = viewportRef.current;
     if (!viewport) return;
@@ -1337,11 +1202,11 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     return () => viewport.removeEventListener("wheel", handleNativeWheel);
   }, []);
 
-  // Additional state and refs for pinch-to-zoom
+  // Manages touch-based zoom and pan state
   const [touchDistance, setTouchDistance] = useState<number | null>(null);
   const lastTouchDistance = useRef<number | null>(null);
 
-  // Calculate distance between two touch points
+  // Calculates distance between two touch points
   const getTouchDistance = useCallback((touches: React.TouchList) => {
     if (touches.length < 2) return null;
 
@@ -1350,7 +1215,7 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     return Math.sqrt(dx * dx + dy * dy);
   }, []);
 
-  // Get center point between two touches
+  // Calculates center point between two touches
   const getTouchCenter = useCallback((touches: React.TouchList) => {
     if (touches.length < 2) return null;
 
@@ -1360,11 +1225,10 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     };
   }, []);
 
-  // Handle touch events - support pinch-to-zoom
+  // Handles touch start events for pan and pinch-to-zoom
   const handleTouchStart = useCallback(
     (e: React.TouchEvent<HTMLDivElement>) => {
       if (e.touches.length === 1) {
-        // Single touch - start panning
         setIsPanning(true);
         lastPanPosition.current = {
           x: e.touches[0].clientX,
@@ -1372,7 +1236,6 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
         };
         setTouchDistance(null);
       } else if (e.touches.length === 2) {
-        // Two touches - start pinch-to-zoom
         setIsPanning(false);
         const distance = getTouchDistance(e.touches);
         setTouchDistance(distance);
@@ -1382,10 +1245,10 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     [getTouchDistance]
   );
 
+  // Handles touch move events for pan and pinch-to-zoom
   const handleTouchMove = useCallback(
     (e: React.TouchEvent<HTMLDivElement>) => {
       if (e.touches.length === 1 && isPanning) {
-        // Handle panning with one finger
         const dx = e.touches[0].clientX - lastPanPosition.current.x;
         const dy = e.touches[0].clientY - lastPanPosition.current.y;
 
@@ -1399,29 +1262,21 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
           y: e.touches[0].clientY,
         };
       } else if (e.touches.length === 2) {
-        // Handle pinch-to-zoom with two fingers
         const currentDistance = getTouchDistance(e.touches);
         const previousDistance = lastTouchDistance.current;
 
         if (currentDistance && previousDistance && previousDistance > 0) {
-          // Calculate zoom based directly on the pinch distance ratio
-          // This is much more responsive than using small fixed steps
           const distanceRatio = currentDistance / previousDistance;
 
-          // Get center point of the pinch
           const center = getTouchCenter(e.touches);
 
           if (center) {
-            // Calculate new scale with direct ratio scaling for more responsive feel
-            // Allow zooming out to 1% (0.01) on mobile
             const newScale = Math.max(0.01, Math.min(5, scale * distanceRatio));
 
-            // Apply scale change
             setScale(newScale);
           }
         }
 
-        // Update last touch distance
         lastTouchDistance.current = currentDistance;
       }
 
@@ -1430,18 +1285,19 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     [isPanning, getTouchDistance, getTouchCenter, scale]
   );
 
+  // Resets touch interaction states
   const handleTouchEnd = useCallback(() => {
     setIsPanning(false);
     setTouchDistance(null);
     lastTouchDistance.current = null;
   }, []);
 
-  // Add temporary states for sliders
+  // Manages temporary states for UI controls
   const [tempSize, setTempSize] = useState(initialSize);
   const [tempBrightness, setTempBrightness] = useState(0);
   const [tempContrast, setTempContrast] = useState(0);
 
-  // Debounced update functions
+  // Debounced update functions for performance
   const debouncedUpdateSize = useMemo(
     () => debounce((value: number) => setSize(value), 150),
     []
@@ -1458,26 +1314,28 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     []
   );
 
-  // Handle slider changes
+  // Handles size slider changes
   const handleSizeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = Number(e.target.value);
     setTempSize(value);
     debouncedUpdateSize(value);
   };
 
+  // Handles brightness slider changes
   const handleBrightnessChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = parseInt(e.target.value);
     setTempBrightness(value);
     debouncedUpdateRenderOptions({ brightness: value });
   };
 
+  // Handles contrast slider changes
   const handleContrastChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = parseInt(e.target.value);
     setTempContrast(value);
     debouncedUpdateRenderOptions({ contrast: value });
   };
 
-  // Update temp states when actual values change
+  // Syncs temporary states with actual values
   useEffect(() => {
     setTempSize(size);
   }, [size]);
@@ -1487,59 +1345,54 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     setTempContrast(renderOptions.contrast);
   }, [renderOptions.brightness, renderOptions.contrast]);
 
-  // Helper function to return focus to the canvas container
+  // Returns focus to the canvas container
   const returnFocusToCanvas = useCallback(() => {
     if (viewportRef.current) {
       viewportRef.current.focus();
     }
   }, []);
 
-  // Wrap all control handlers to return focus to canvas
+  // Wraps control handlers to maintain canvas focus
   const handleControlClick = useCallback(
     (callback: () => void) => {
       return (e: React.MouseEvent) => {
-        // Prevent default to avoid losing focus
         e.preventDefault();
-        // Execute the original callback
         callback();
-        // Return focus to canvas
         setTimeout(returnFocusToCanvas, 0);
       };
     },
     [returnFocusToCanvas]
   );
 
-  // Special handler for file input label that doesn't prevent default
+  // Handles file input focus management
   const handleFileInputClick = useCallback(() => {
-    // Only schedule focus return, but don't prevent default behavior
-    setTimeout(returnFocusToCanvas, 100); // Slightly longer timeout to allow file dialog to open
+    setTimeout(returnFocusToCanvas, 100);
   }, [returnFocusToCanvas]);
 
-  // Modified toggle controls to maintain focus
+  // Toggles control panel visibility while maintaining focus
   const toggleControlsWithFocus = useCallback(() => {
     setControlsExpanded((prev) => !prev);
     setTimeout(returnFocusToCanvas, 0);
   }, [returnFocusToCanvas]);
 
-  // Focus the canvas on mount
+  // Sets initial focus on canvas
   useEffect(() => {
     if (viewportRef.current) {
       viewportRef.current.focus();
     }
   }, []);
 
-  // Redraw canvas on background color change
+  // Updates canvas when background color changes
   useEffect(() => {
     if (imageRef.current && canvasRef.current && !loading) {
       renderAsciiArt();
     }
   }, [backgroundColor, customBgColor, renderAsciiArt, loading]);
 
-  // Background color modal component with improved UI
+  // Modal component for selecting and customizing background colors
   const BackgroundColorModal = () => {
     if (!bgModalOpen) return null;
 
-    // Local state for color picker to prevent immediate updates while selecting
     const [tempCustomColor, setTempCustomColor] = useState(customBgColor);
 
     const applyCustomColor = () => {
@@ -1559,7 +1412,6 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
         >
           <h3 className="text-lg font-medium mb-4">Background Color</h3>
           <div className="space-y-3">
-            {/* Standard color options */}
             <div className="flex space-x-3 mb-4">
               <button
                 className={`flex-1 py-2 px-3 rounded-md flex items-center justify-center ${
@@ -1592,7 +1444,6 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
               </button>
             </div>
 
-            {/* Custom color section */}
             <div
               className={`p-4 rounded-md ${
                 backgroundColor === "custom"
@@ -1641,6 +1492,7 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     );
   };
 
+  // Main component render with control panel, modals, and canvas viewport
   return (
     <div className="flex flex-col h-full w-full" ref={mainContainerRef}>
       {/* Minimized Control Bar - Increased size */}
