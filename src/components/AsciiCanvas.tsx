@@ -28,7 +28,7 @@ const CHAR_ASPECT_RATIO = CHAR_WIDTH / CHAR_HEIGHT;
 const DEFAULT_ASCII_CHARS =
   "$@B%8&WM#*oahkbdpqwmZO0QLCJUYXzcvunxrjft/|()1{}[]?-_+~<>i!lI;:,\"^`'. ";
 
-// Alternative character sets
+// Alternative character sets with simpler names
 const ASCII_PRESETS = {
   default: DEFAULT_ASCII_CHARS,
   simple: "@%#*+=-:. ",
@@ -36,6 +36,9 @@ const ASCII_PRESETS = {
 };
 
 type CharacterSet = keyof typeof ASCII_PRESETS;
+
+// Add rendering mode type
+type RenderMode = "ascii" | "emoji";
 
 // Define color filter types
 type ColorFilter =
@@ -55,6 +58,109 @@ type ColorFilter =
 
 // Define background color type
 type BackgroundColor = "black" | "white" | "custom";
+
+// Emoji mapping for different colors and brightness levels
+interface EmojiMap {
+  [key: string]: string[];
+}
+
+// Emoji categories by color and brightness (from dark to light)
+const EMOJI_MAP: EmojiMap = {
+  // Red emojis from dark to light
+  red: ["🩸", "🍷", "🧣", "🚨", "🎈", "❤️", "🍎", "🍓", "🔴", "🔺"],
+
+  // Green emojis from dark to light
+  green: ["🫑", "🦖", "🎄", "🥦", "🫛", "🍀", "🥒", "🥝", "✅", "🟢"],
+
+  // Blue emojis from dark to light
+  blue: ["🦕", "🌀", "🧢", "🌊", "📘", "🦋", "🫐", "🔵", "💎", "🧊"],
+
+  // Yellow emojis from dark to light
+  yellow: ["🌙", "🐝", "🍯", "🌻", "⚠️", "🍌", "🌞", "⭐", "🔆", "🟡"],
+
+  // Orange/brown emojis from dark to light
+  orange: ["🦊", "🏀", "🍊", "🦁", "🍁", "🚧", "🌅", "🔶", "🟠", "☀️"],
+
+  // Purple/pink emojis from dark to light
+  purple: ["🍆", "🪻", "🔮", "📿", "🎭", "☂️", "👾", "🟣", "💜", "🪄"],
+
+  // Gray scale from dark to light
+  gray: ["🖤", "🌑", "🕶️", "🏴", "🐺", "🐘", "🪨", "⚙️", "🩶", "⚪"],
+};
+
+// Function to find the closest color match - improved color detection
+function findClosestColorEmoji(
+  r: number,
+  g: number,
+  b: number,
+  brightness: number
+): string {
+  // Determine dominant color with improved detection
+  const max = Math.max(r, g, b);
+  let dominantColor: string;
+  const threshold = 30; // Threshold for considering a pixel as grayscale
+
+  // Brightness index for 10 levels, properly mapped
+  const brightnessIndex = Math.min(9, Math.floor(brightness / 25.5));
+
+  // Check for white/very bright pixels first
+  if (r > 220 && g > 220 && b > 220) {
+    // Very bright pixels should use the brightest emojis
+    return EMOJI_MAP.gray[9]; // Whitest emoji
+  }
+
+  // Check for very dark pixels
+  if (max < 30) {
+    return EMOJI_MAP.gray[0]; // Very dark, return darkest gray emoji
+  }
+
+  // Check for grayscale (when R, G, B are close to each other)
+  if (
+    Math.abs(r - g) < threshold &&
+    Math.abs(r - b) < threshold &&
+    Math.abs(g - b) < threshold
+  ) {
+    dominantColor = "gray"; // If r, g, b values are close, it's a gray tone
+  }
+  // Improved yellow detection (yellow is often underrepresented)
+  else if (r > 180 && g > 180 && b < r - threshold && b < g - threshold) {
+    dominantColor = "yellow";
+  }
+  // Red detection
+  else if (r === max && r > g + threshold && r > b + threshold) {
+    dominantColor = "red";
+  }
+  // Green detection
+  else if (g === max && g > r + threshold && g > b + threshold) {
+    dominantColor = "green";
+  }
+  // Blue detection
+  else if (b === max && b > r + threshold && b > g + threshold) {
+    dominantColor = "blue";
+  }
+  // Orange detection (more red than green, but both high)
+  else if (r === max && g > r - threshold && g > b + threshold) {
+    dominantColor = "orange";
+  }
+  // Purple detection
+  else if (r === max && b === max && r > g + threshold) {
+    dominantColor = "purple";
+  } else {
+    // If we can't determine confidently, use the largest component
+    if (r === max) {
+      if (g > b) dominantColor = "orange";
+      else dominantColor = "purple";
+    } else if (g === max) {
+      if (r > b) dominantColor = "yellow";
+      else dominantColor = "green";
+    } else {
+      dominantColor = "blue";
+    }
+  }
+
+  // Return the emoji at the appropriate brightness index
+  return EMOJI_MAP[dominantColor][brightnessIndex];
+}
 
 interface AsciiCanvasProps {
   initialImage?: string | null;
@@ -137,7 +243,7 @@ function hslToRgb(h: number, s: number, l: number): [number, number, number] {
   ];
 }
 
-// Convert image to ASCII art and render on the canvas
+// Modify the drawAscii function to handle emoji mode
 const drawAscii = (
   image: HTMLImageElement,
   size: number,
@@ -145,11 +251,18 @@ const drawAscii = (
   characterSet: string,
   outputCanvas: HTMLCanvasElement,
   options: AsciiRenderOptions = { brightness: 0, contrast: 0, invert: false },
-  backgroundColor: BackgroundColor | string = "black" // Allow string to accept custom colors
+  backgroundColor: BackgroundColor | string = "black",
+  renderMode: RenderMode = "ascii"
 ) => {
   const aspectRatio = image.width / image.height;
+
+  // Adjust for emoji aspect ratio when in emoji mode
+  const emojiAspectRatio = 1.0; // Emojis are roughly square
+  const effectiveAspectRatio =
+    renderMode === "emoji" ? emojiAspectRatio : CHAR_ASPECT_RATIO;
+
   const width = size;
-  const height = Math.floor((size / aspectRatio) * CHAR_ASPECT_RATIO);
+  const height = Math.floor((size / aspectRatio) * effectiveAspectRatio);
 
   const tempCanvas = document.createElement("canvas");
   const ctx = tempCanvas.getContext("2d", { willReadFrequently: true });
@@ -183,7 +296,7 @@ const drawAscii = (
         );
       }
 
-      // Apply invert if needed (make sure it works regardless of brightness/contrast)
+      // Apply invert if needed
       if (options.invert) {
         data[i] = 255 - data[i];
         data[i + 1] = 255 - data[i + 1];
@@ -195,25 +308,38 @@ const drawAscii = (
   }
 
   const imageData = ctx.getImageData(0, 0, width, height).data;
-  outputCanvas.width = width * CHAR_WIDTH;
-  outputCanvas.height = height * CHAR_HEIGHT;
+
+  // Different cell sizes for emoji vs ASCII
+  const cellWidth = renderMode === "emoji" ? 32 : CHAR_WIDTH;
+  const cellHeight = renderMode === "emoji" ? 32 : CHAR_HEIGHT;
+
+  outputCanvas.width = width * cellWidth;
+  outputCanvas.height = height * cellHeight;
+
   const outputCtx = outputCanvas.getContext("2d", {
     alpha: false,
   }) as CanvasRenderingContext2D;
 
   if (!outputCtx) return;
 
-  // Disable image smoothing for crisp text
+  // Disable image smoothing for crisp rendering
   outputCtx.imageSmoothingEnabled = false;
   outputCtx.clearRect(0, 0, outputCanvas.width, outputCanvas.height);
 
-  // Use a crisp font rendering
-  outputCtx.font = `bold ${CHAR_HEIGHT}px monospace`;
-  outputCtx.textBaseline = "top";
-
-  // Set canvas background based on backgroundColor
-  outputCtx.fillStyle = backgroundColor; // This will work with both named colors and hex values
+  // Set canvas background
+  outputCtx.fillStyle = backgroundColor;
   outputCtx.fillRect(0, 0, outputCanvas.width, outputCanvas.height);
+
+  // Choose font based on mode
+  if (renderMode === "emoji") {
+    outputCtx.font = `${cellHeight - 2}px Arial`;
+    outputCtx.textBaseline = "middle";
+    outputCtx.textAlign = "center";
+  } else {
+    outputCtx.font = `bold ${cellHeight}px monospace`;
+    outputCtx.textBaseline = "top";
+    outputCtx.textAlign = "start";
+  }
 
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
@@ -222,266 +348,520 @@ const drawAscii = (
         g = imageData[idx + 1],
         b = imageData[idx + 2];
       const brightness = 0.299 * r + 0.587 * g + 0.114 * b;
-      const charIndex = Math.floor(
-        (brightness / 255) * (characterSet.length - 1)
-      );
-      const char = characterSet[charIndex];
 
-      // Apply color filter
-      switch (colorFilter) {
-        case "original":
-          // Original colors from image
-          outputCtx.fillStyle = `rgb(${r}, ${g}, ${b})`;
-          break;
-        case "monochrome":
-          // Black and white
-          const gray = Math.round(brightness);
-          outputCtx.fillStyle = `rgb(${gray}, ${gray}, ${gray})`;
-          break;
-        case "vintage":
-          // Vintage sepia tone
-          const sepiaR = Math.min(255, r * 0.393 + g * 0.769 + b * 0.189);
-          const sepiaG = Math.min(255, r * 0.349 + g * 0.686 + b * 0.168);
-          const sepiaB = Math.min(255, r * 0.272 + g * 0.534 + b * 0.131);
-          outputCtx.fillStyle = `rgb(${sepiaR}, ${sepiaG}, ${sepiaB})`;
-          break;
-        case "inverted":
-          // Inverted colors
-          outputCtx.fillStyle = `rgb(${255 - r}, ${255 - g}, ${255 - b})`;
-          break;
-        case "matrix":
-          // Matrix green (brighter for brighter pixels)
-          const intensity = Math.round(brightness);
-          outputCtx.fillStyle = `rgb(0, ${Math.min(255, intensity * 1.5)}, 0)`;
-          break;
-        case "hell":
-          // Hell style (fiery reds and oranges)
-          const hellBrightness = brightness / 255;
-          if (hellBrightness > 0.7) {
-            // Bright areas: yellow to white
-            outputCtx.fillStyle = `rgb(255, ${Math.round(
-              200 + hellBrightness * 55
-            )}, ${Math.round(50 + hellBrightness * 50)})`;
-          } else if (hellBrightness > 0.4) {
-            // Mid tones: orange to yellow
-            outputCtx.fillStyle = `rgb(255, ${Math.round(
-              50 + hellBrightness * 150
-            )}, 0)`;
-          } else {
-            // Dark areas: deep red to orange
-            outputCtx.fillStyle = `rgb(${Math.round(
-              120 + hellBrightness * 135
-            )}, ${Math.round(hellBrightness * 50)}, 0)`;
-          }
-          break;
-        case "blueprint":
-          // Blueprint technical drawing style
-          const bpBrightness = brightness / 255;
-          const bpValue = Math.round(210 + bpBrightness * 45); // Bright lines on blue background
-          outputCtx.fillStyle = `rgb(${bpValue * bpBrightness}, ${
-            bpValue * bpBrightness
-          }, ${100 + bpBrightness * 155})`;
-          break;
-        case "@basedanarki vision (heat)":
-          // Adjusted Thermal imaging heat map
-          const heatLevel = brightness / 255;
-          if (heatLevel > 0.75) {
-            // Hottest: white to yellow
-            outputCtx.fillStyle = `rgb(255, 255, ${Math.round(
-              heatLevel * 255
-            )})`;
-          } else if (heatLevel > 0.5) {
-            // Hot: yellow to red
-            outputCtx.fillStyle = `rgb(255, ${
-              Math.round(heatLevel * 510) - 255
-            }, 0)`;
-          } else if (heatLevel > 0.25) {
-            // Warm: red to purple
-            outputCtx.fillStyle = `rgb(${
-              Math.round(heatLevel * 510) - 127
-            }, 0, ${Math.round((1 - heatLevel) * 255)})`;
-          } else {
-            // Cool: purple to blue/black
-            outputCtx.fillStyle = `rgb(0, 0, ${
-              Math.round(heatLevel * 510) - 127
-            })`;
-          }
-          break;
-        case "rainbow":
-          // Old neon effect with full rainbow variation
-          const rainbowIntensity = brightness / 255;
-          const hue = (x / width) * 360; // Full hue range
-          const [rainbowR, rainbowG, rainbowB] = hslToRgb(
-            hue,
-            1,
-            rainbowIntensity
-          );
-          outputCtx.fillStyle = `rgb(${rainbowR}, ${rainbowG}, ${rainbowB})`;
-          break;
-        case "glitch":
-          // Enhanced Digital glitch effect - more distortion, less noise
-          let glitchR = r;
-          let glitchG = g;
-          let glitchB = b;
+      if (renderMode === "emoji") {
+        // Special handling for emoji rendering - use color and brightness
+        let emoji: string;
 
-          // Stronger channel shifting
-          const shiftAmount = 70; // Increased from 50
+        // Select emoji based on the color filter
+        switch (colorFilter) {
+          case "monochrome":
+            // Use grayscale emojis for monochrome
+            const grayIndex = Math.min(9, Math.floor(brightness / 25.5));
+            emoji = EMOJI_MAP.gray[grayIndex];
+            break;
 
-          // Horizontal line distortion - offset pixels horizontally
-          const horizontalOffset = Math.floor(Math.random() * 7) - 3; // -3 to +3 pixel shift
-          if (horizontalOffset !== 0 && Math.random() > 0.7) {
-            // Get color from offset position when possible
-            const offsetX = Math.max(
-              0,
-              Math.min(width - 1, x + horizontalOffset)
+          case "inverted":
+            // Invert brightness for emoji selection
+            const invertedBrightness = 255 - brightness;
+            emoji = findClosestColorEmoji(
+              255 - r,
+              255 - g,
+              255 - b,
+              invertedBrightness
             );
-            const offsetIdx = (y * width + offsetX) * 4;
-            glitchR = imageData[offsetIdx];
-            glitchG = imageData[offsetIdx + 1];
-            glitchB = imageData[offsetIdx + 2];
-          }
+            break;
 
-          // Channel shifting with more extreme values
-          if (Math.random() > 0.6) {
-            glitchR = Math.max(
-              0,
-              Math.min(255, glitchR + (Math.random() * 2 - 1) * shiftAmount)
+          case "vintage":
+            // Sepia tone for vintage look
+            const sepiaR = Math.min(255, r * 0.393 + g * 0.769 + b * 0.189);
+            const sepiaG = Math.min(255, r * 0.349 + g * 0.686 + b * 0.168);
+            const sepiaB = Math.min(255, r * 0.272 + g * 0.534 + b * 0.131);
+            emoji = findClosestColorEmoji(
+              sepiaR,
+              sepiaG,
+              sepiaB,
+              0.299 * sepiaR + 0.587 * sepiaG + 0.114 * sepiaB
             );
-          }
-          if (Math.random() > 0.6) {
-            glitchG = Math.max(
-              0,
-              Math.min(255, glitchG + (Math.random() * 2 - 1) * shiftAmount)
-            );
-          }
-          if (Math.random() > 0.6) {
-            glitchB = Math.max(
-              0,
-              Math.min(255, glitchB + (Math.random() * 2 - 1) * shiftAmount)
-            );
-          }
+            break;
 
-          // Channel bleeding - one channel leaks into others
-          if (Math.random() > 0.85) {
-            const dominantChannel = Math.floor(Math.random() * 3);
-            if (dominantChannel === 0) {
-              glitchG = Math.max(0, Math.min(255, glitchR * 0.7));
-              glitchB = Math.max(0, Math.min(255, glitchR * 0.3));
-            } else if (dominantChannel === 1) {
-              glitchR = Math.max(0, Math.min(255, glitchG * 0.3));
-              glitchB = Math.max(0, Math.min(255, glitchG * 0.7));
+          case "pastel":
+            // Pastel colors - soften and brighten
+            const pastelR = Math.min(255, r + (255 - r) * 0.5);
+            const pastelG = Math.min(255, g + (255 - g) * 0.5);
+            const pastelB = Math.min(255, b + (255 - b) * 0.5);
+            emoji = findClosestColorEmoji(
+              pastelR,
+              pastelG,
+              pastelB,
+              0.299 * pastelR + 0.587 * pastelG + 0.114 * pastelB
+            );
+            break;
+
+          case "matrix":
+            // Green on black Matrix style
+            // Force green emojis with brightness based on original pixel
+            const matrixIndex = Math.min(9, Math.floor(brightness / 25.5));
+            emoji = EMOJI_MAP.green[matrixIndex];
+            break;
+
+          case "hell":
+            // Hell style - fiery reds and oranges
+            // Prioritize red/orange emojis
+            const hellR = Math.min(255, r * 1.5);
+            const hellG = Math.min(255, g * 0.7);
+            const hellB = Math.min(255, b * 0.3);
+            const hellBrightness =
+              0.299 * hellR + 0.587 * hellG + 0.114 * hellB;
+
+            if (hellBrightness > 128) {
+              // Brighter hell pixels use orange emojis
+              const orangeIndex = Math.min(
+                9,
+                Math.floor((hellBrightness - 128) / 12.75)
+              );
+              emoji = EMOJI_MAP.orange[orangeIndex];
             } else {
-              glitchR = Math.max(0, Math.min(255, glitchB * 0.5));
-              glitchG = Math.max(0, Math.min(255, glitchB * 0.5));
+              // Darker hell pixels use red emojis
+              const redIndex = Math.min(9, Math.floor(hellBrightness / 12.75));
+              emoji = EMOJI_MAP.red[redIndex];
             }
-          }
+            break;
 
-          // Occasional color channel swapping (less frequent)
-          if (Math.random() > 0.92) {
-            [glitchR, glitchG, glitchB] = [glitchB, glitchR, glitchG];
-          }
+          case "blueprint":
+            // Blueprint - technical drawing blue and white
+            const blueprintIndex = Math.min(9, Math.floor(brightness / 25.5));
+            emoji = EMOJI_MAP.blue[blueprintIndex];
+            break;
 
-          // Complete signal loss (black/white) - reduced frequency
-          if (Math.random() > 0.97) {
-            const lossVal = Math.random() > 0.5 ? 255 : 0;
-            glitchR = glitchG = glitchB = lossVal;
-          }
+          case "@basedanarki vision (heat)":
+            // Heat map visualization
+            if (brightness > 192) {
+              // Hottest areas - yellow/white
+              const yellowIndex = Math.min(
+                9,
+                5 + Math.floor((brightness - 192) / 12.75)
+              );
+              emoji = EMOJI_MAP.yellow[yellowIndex];
+            } else if (brightness > 128) {
+              // Hot areas - orange/red
+              const orangeIndex = Math.min(
+                9,
+                Math.floor((brightness - 128) / 12.75)
+              );
+              emoji = EMOJI_MAP.orange[orangeIndex];
+            } else if (brightness > 64) {
+              // Warm areas - purple/magenta
+              const purpleIndex = Math.min(
+                9,
+                Math.floor((brightness - 64) / 12.75)
+              );
+              emoji = EMOJI_MAP.purple[purpleIndex];
+            } else {
+              // Cool areas - blue/dark
+              const blueIndex = Math.min(9, Math.floor(brightness / 12.75));
+              emoji = EMOJI_MAP.blue[blueIndex];
+            }
+            break;
 
-          outputCtx.fillStyle = `rgb(${glitchR}, ${glitchG}, ${glitchB})`;
-          break;
-        case "pastel":
-          // Soft pastel colors
-          const pastelR = Math.round(r * 0.7 + 77);
-          const pastelG = Math.round(g * 0.7 + 77);
-          const pastelB = Math.round(b * 0.7 + 77);
-          outputCtx.fillStyle = `rgb(${pastelR}, ${pastelG}, ${pastelB})`;
-          break;
-        case "cyberpunk":
-          // Cyberpunk gradient based on brightness (renamed from duotone)
-          const cyberpunkFactor = brightness / 255;
-          // Primary color (highlights): Teal (#00C2BA)
-          const primaryR = 0;
-          const primaryG = 194;
-          const primaryB = 186;
-          // Secondary color (shadows): Deep Purple (#2A0057)
-          const secondaryR = 42;
-          const secondaryG = 0;
-          const secondaryB = 87;
+          case "rainbow":
+            // Rainbow effect - color changes horizontally
+            const rainbowPosition = Math.floor((x / width) * 6) % 6;
+            let rainbowColor: string;
 
-          // Mix the two colors based on brightness
-          const cyberpunkR = Math.round(
-            secondaryR + (primaryR - secondaryR) * cyberpunkFactor
-          );
-          const cyberpunkG = Math.round(
-            secondaryG + (primaryG - secondaryG) * cyberpunkFactor
-          );
-          const cyberpunkB = Math.round(
-            secondaryB + (primaryB - secondaryB) * cyberpunkFactor
-          );
+            switch (rainbowPosition) {
+              case 0:
+                rainbowColor = "red";
+                break;
+              case 1:
+                rainbowColor = "orange";
+                break;
+              case 2:
+                rainbowColor = "yellow";
+                break;
+              case 3:
+                rainbowColor = "green";
+                break;
+              case 4:
+                rainbowColor = "blue";
+                break;
+              case 5:
+                rainbowColor = "purple";
+                break;
+              default:
+                rainbowColor = "gray";
+            }
 
-          outputCtx.fillStyle = `rgb(${cyberpunkR}, ${cyberpunkG}, ${cyberpunkB})`;
-          break;
-        case "retrowave":
-          // Retrowave color scheme
-          const retrowaveFactor = brightness / 255;
-          let retroR, retroG, retroB;
+            const rainbowIndex = Math.min(9, Math.floor(brightness / 25.5));
+            emoji = EMOJI_MAP[rainbowColor][rainbowIndex];
+            break;
 
-          if (retrowaveFactor > 0.8) {
-            // Highlights: Bright cyan
-            retroR = 80;
-            retroG = 235;
-            retroB = 255;
-          } else if (retrowaveFactor > 0.5) {
-            // Mid-tones: Purple/Pink
-            retroR = 220;
-            retroG = 50;
-            retroB = 220;
-          } else if (retrowaveFactor > 0.2) {
-            // Shadow mid-tones: Deep blue
-            retroR = 30;
-            retroG = 20;
-            retroB = 180;
-          } else {
-            // Deep shadows: Almost black with hint of purple
-            retroR = 10;
-            retroG = 5;
-            retroB = 40;
-          }
+          case "glitch":
+            // Digital glitch effect - randomly shift colors
+            const glitchChance = Math.random();
+            let glitchR = r,
+              glitchG = g,
+              glitchB = b;
 
-          outputCtx.fillStyle = `rgb(${retroR}, ${retroG}, ${retroB})`;
-          break;
+            if (glitchChance > 0.9) {
+              // Channel swap
+              [glitchR, glitchG, glitchB] = [glitchB, glitchR, glitchG];
+            } else if (glitchChance > 0.8) {
+              // Shift values
+              glitchR = Math.max(
+                0,
+                Math.min(255, r + Math.floor(Math.random() * 100) - 50)
+              );
+              glitchG = Math.max(
+                0,
+                Math.min(255, g + Math.floor(Math.random() * 100) - 50)
+              );
+              glitchB = Math.max(
+                0,
+                Math.min(255, b + Math.floor(Math.random() * 100) - 50)
+              );
+            }
+
+            emoji = findClosestColorEmoji(
+              glitchR,
+              glitchG,
+              glitchB,
+              0.299 * glitchR + 0.587 * glitchG + 0.114 * glitchB
+            );
+            break;
+
+          case "cyberpunk":
+            // Cyberpunk style - neon blue and pink/purple contrast
+            const cyberValue = brightness / 255;
+
+            if (cyberValue > 0.7) {
+              // Highlights - cyan/blue
+              const blueIndex = Math.min(
+                9,
+                5 + Math.floor((cyberValue - 0.7) * 33.3)
+              );
+              emoji = EMOJI_MAP.blue[blueIndex];
+            } else if (cyberValue > 0.3) {
+              // Midtones - purple
+              const purpleIndex = Math.min(
+                9,
+                Math.floor((cyberValue - 0.3) * 25)
+              );
+              emoji = EMOJI_MAP.purple[purpleIndex];
+            } else {
+              // Shadows - dark blue/black
+              const blueIndex = Math.min(4, Math.floor(cyberValue * 16.7));
+              emoji = EMOJI_MAP.blue[blueIndex];
+            }
+            break;
+
+          case "retrowave":
+            // Retrowave - bold pink, purple, blue gradients with sunset effect
+            const retroY = y / height; // Vertical position for gradient
+            let retroIndex;
+
+            // Create a sunset-style gradient effect
+            if (retroY < 0.4) {
+              // Top section - pinks and purples (sunset sky)
+              retroIndex = Math.min(9, Math.floor(brightness / 25.5));
+              if (retroIndex > 5) {
+                emoji = EMOJI_MAP.purple[retroIndex];
+              } else {
+                emoji = EMOJI_MAP.red[retroIndex + 4]; // Use pink/red tones
+              }
+            } else if (retroY < 0.7) {
+              // Horizon line with sun - oranges and yellows
+              retroIndex = Math.min(9, Math.floor(brightness / 25.5));
+              if (retroIndex > 6) {
+                emoji = EMOJI_MAP.yellow[retroIndex];
+              } else {
+                emoji = EMOJI_MAP.orange[retroIndex + 3];
+              }
+            } else {
+              // Bottom section - blue/purple grid
+              retroIndex = Math.min(9, Math.floor(brightness / 25.5));
+              if (brightness > 170) {
+                // Bright grid lines
+                emoji = EMOJI_MAP.purple[Math.min(9, retroIndex + 2)];
+              } else {
+                // Dark background
+                emoji = EMOJI_MAP.blue[Math.max(0, retroIndex - 2)];
+              }
+            }
+            break;
+
+          default:
+            // Original and any other filters - use color-based emoji selection
+            emoji = findClosestColorEmoji(r, g, b, brightness);
+            break;
+        }
+
+        // Center the emoji in its cell
+        const centerX = x * cellWidth + cellWidth / 2;
+        const centerY = y * cellHeight + cellHeight / 2;
+        outputCtx.fillText(emoji, centerX, centerY);
+      } else {
+        // Regular ASCII character rendering
+        const charIndex = Math.floor(
+          (brightness / 255) * (characterSet.length - 1)
+        );
+        const char = characterSet[charIndex];
+
+        // Apply color based on the selected filter
+        switch (colorFilter) {
+          case "original":
+            // Original colors from image
+            outputCtx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+            break;
+          case "monochrome":
+            // Black and white
+            const gray = Math.round(brightness);
+            outputCtx.fillStyle = `rgb(${gray}, ${gray}, ${gray})`;
+            break;
+          case "vintage":
+            // Vintage sepia tone
+            const sepiaR = Math.min(255, r * 0.393 + g * 0.769 + b * 0.189);
+            const sepiaG = Math.min(255, r * 0.349 + g * 0.686 + b * 0.168);
+            const sepiaB = Math.min(255, r * 0.272 + g * 0.534 + b * 0.131);
+            outputCtx.fillStyle = `rgb(${sepiaR}, ${sepiaG}, ${sepiaB})`;
+            break;
+          case "inverted":
+            // Inverted colors
+            outputCtx.fillStyle = `rgb(${255 - r}, ${255 - g}, ${255 - b})`;
+            break;
+          case "matrix":
+            // Matrix green (brighter for brighter pixels)
+            const intensity = Math.round(brightness);
+            outputCtx.fillStyle = `rgb(0, ${Math.min(
+              255,
+              intensity * 1.5
+            )}, 0)`;
+            break;
+          case "hell":
+            // Hell style (fiery reds and oranges)
+            const hellBrightness = brightness / 255;
+            if (hellBrightness > 0.7) {
+              // Bright areas: yellow to white
+              outputCtx.fillStyle = `rgb(255, ${Math.round(
+                200 + hellBrightness * 55
+              )}, ${Math.round(50 + hellBrightness * 50)})`;
+            } else if (hellBrightness > 0.4) {
+              // Mid tones: orange to yellow
+              outputCtx.fillStyle = `rgb(255, ${Math.round(
+                50 + hellBrightness * 150
+              )}, 0)`;
+            } else {
+              // Dark areas: deep red to orange
+              outputCtx.fillStyle = `rgb(${Math.round(
+                120 + hellBrightness * 135
+              )}, ${Math.round(hellBrightness * 50)}, 0)`;
+            }
+            break;
+          case "blueprint":
+            // Blueprint technical drawing style
+            const bpBrightness = brightness / 255;
+            const bpValue = Math.round(210 + bpBrightness * 45); // Bright lines on blue background
+            outputCtx.fillStyle = `rgb(${bpValue * bpBrightness}, ${
+              bpValue * bpBrightness
+            }, ${100 + bpBrightness * 155})`;
+            break;
+          case "@basedanarki vision (heat)":
+            // Adjusted Thermal imaging heat map
+            const heatLevel = brightness / 255;
+            if (heatLevel > 0.75) {
+              // Hottest: white to yellow
+              outputCtx.fillStyle = `rgb(255, 255, ${Math.round(
+                heatLevel * 255
+              )})`;
+            } else if (heatLevel > 0.5) {
+              // Hot: yellow to red
+              outputCtx.fillStyle = `rgb(255, ${
+                Math.round(heatLevel * 510) - 255
+              }, 0)`;
+            } else if (heatLevel > 0.25) {
+              // Warm: red to purple
+              outputCtx.fillStyle = `rgb(${
+                Math.round(heatLevel * 510) - 127
+              }, 0, ${Math.round((1 - heatLevel) * 255)})`;
+            } else {
+              // Cool: purple to blue/black
+              outputCtx.fillStyle = `rgb(0, 0, ${
+                Math.round(heatLevel * 510) - 127
+              })`;
+            }
+            break;
+          case "rainbow":
+            // Old neon effect with full rainbow variation
+            const rainbowIntensity = brightness / 255;
+            const hue = (x / width) * 360; // Full hue range
+            const [rainbowR, rainbowG, rainbowB] = hslToRgb(
+              hue,
+              1,
+              rainbowIntensity
+            );
+            outputCtx.fillStyle = `rgb(${rainbowR}, ${rainbowG}, ${rainbowB})`;
+            break;
+          case "glitch":
+            // Enhanced Digital glitch effect - more distortion, less noise
+            let glitchR = r;
+            let glitchG = g;
+            let glitchB = b;
+
+            // Stronger channel shifting
+            const shiftAmount = 70; // Increased from 50
+
+            // Horizontal line distortion - offset pixels horizontally
+            const horizontalOffset = Math.floor(Math.random() * 7) - 3; // -3 to +3 pixel shift
+            if (horizontalOffset !== 0 && Math.random() > 0.7) {
+              // Get color from offset position when possible
+              const offsetX = Math.max(
+                0,
+                Math.min(width - 1, x + horizontalOffset)
+              );
+              const offsetIdx = (y * width + offsetX) * 4;
+              glitchR = imageData[offsetIdx];
+              glitchG = imageData[offsetIdx + 1];
+              glitchB = imageData[offsetIdx + 2];
+            }
+
+            // Channel shifting with more extreme values
+            if (Math.random() > 0.6) {
+              glitchR = Math.max(
+                0,
+                Math.min(255, glitchR + (Math.random() * 2 - 1) * shiftAmount)
+              );
+            }
+            if (Math.random() > 0.6) {
+              glitchG = Math.max(
+                0,
+                Math.min(255, glitchG + (Math.random() * 2 - 1) * shiftAmount)
+              );
+            }
+            if (Math.random() > 0.6) {
+              glitchB = Math.max(
+                0,
+                Math.min(255, glitchB + (Math.random() * 2 - 1) * shiftAmount)
+              );
+            }
+
+            // Channel bleeding - one channel leaks into others
+            if (Math.random() > 0.85) {
+              const dominantChannel = Math.floor(Math.random() * 3);
+              if (dominantChannel === 0) {
+                glitchG = Math.max(0, Math.min(255, glitchR * 0.7));
+                glitchB = Math.max(0, Math.min(255, glitchR * 0.3));
+              } else if (dominantChannel === 1) {
+                glitchR = Math.max(0, Math.min(255, glitchG * 0.3));
+                glitchB = Math.max(0, Math.min(255, glitchG * 0.7));
+              } else {
+                glitchR = Math.max(0, Math.min(255, glitchB * 0.5));
+                glitchG = Math.max(0, Math.min(255, glitchB * 0.5));
+              }
+            }
+
+            // Occasional color channel swapping (less frequent)
+            if (Math.random() > 0.92) {
+              [glitchR, glitchG, glitchB] = [glitchB, glitchR, glitchG];
+            }
+
+            // Complete signal loss (black/white) - reduced frequency
+            if (Math.random() > 0.97) {
+              const lossVal = Math.random() > 0.5 ? 255 : 0;
+              glitchR = glitchG = glitchB = lossVal;
+            }
+
+            outputCtx.fillStyle = `rgb(${glitchR}, ${glitchG}, ${glitchB})`;
+            break;
+          case "cyberpunk":
+            // Cyberpunk gradient based on brightness (renamed from duotone)
+            const cyberpunkFactor = brightness / 255;
+            // Primary color (highlights): Teal (#00C2BA)
+            const primaryR = 0;
+            const primaryG = 194;
+            const primaryB = 186;
+            // Secondary color (shadows): Deep Purple (#2A0057)
+            const secondaryR = 42;
+            const secondaryG = 0;
+            const secondaryB = 87;
+
+            // Mix the two colors based on brightness
+            const cyberpunkR = Math.round(
+              secondaryR + (primaryR - secondaryR) * cyberpunkFactor
+            );
+            const cyberpunkG = Math.round(
+              secondaryG + (primaryG - secondaryG) * cyberpunkFactor
+            );
+            const cyberpunkB = Math.round(
+              secondaryB + (primaryB - secondaryB) * cyberpunkFactor
+            );
+
+            outputCtx.fillStyle = `rgb(${cyberpunkR}, ${cyberpunkG}, ${cyberpunkB})`;
+            break;
+          case "retrowave":
+            // Retrowave color scheme
+            const retrowaveFactor = brightness / 255;
+            let retroR, retroG, retroB;
+
+            if (retrowaveFactor > 0.8) {
+              // Highlights: Bright cyan
+              retroR = 80;
+              retroG = 235;
+              retroB = 255;
+            } else if (retrowaveFactor > 0.5) {
+              // Mid-tones: Purple/Pink
+              retroR = 220;
+              retroG = 50;
+              retroB = 220;
+            } else if (retrowaveFactor > 0.2) {
+              // Shadow mid-tones: Deep blue
+              retroR = 30;
+              retroG = 20;
+              retroB = 180;
+            } else {
+              // Deep shadows: Almost black with hint of purple
+              retroR = 10;
+              retroG = 5;
+              retroB = 40;
+            }
+
+            outputCtx.fillStyle = `rgb(${retroR}, ${retroG}, ${retroB})`;
+            break;
+        }
+
+        // Standard text rendering
+        outputCtx.fillText(char, x * cellWidth, y * cellHeight);
       }
-
-      outputCtx.fillText(char, x * CHAR_WIDTH, y * CHAR_HEIGHT);
     }
   }
 
-  // Add CRT pattern effect
-  const applyCRTPattern = (
-    ctx: CanvasRenderingContext2D,
-    width: number,
-    height: number
-  ) => {
-    const imageData = ctx.getImageData(0, 0, width, height);
-    const data = imageData.data;
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const idx = (y * width + x) * 4;
-        if (x % 2 === 0) {
-          data[idx] *= 0.9; // Slightly dim every other pixel for CRT effect
-          data[idx + 1] *= 0.9;
-          data[idx + 2] *= 0.9;
-        }
-      }
-    }
-    ctx.putImageData(imageData, 0, 0);
-  };
-
-  // Apply CRT pattern after drawing
-  applyCRTPattern(outputCtx, width * CHAR_WIDTH, height * CHAR_HEIGHT);
+  // Apply CRT pattern effect for the 'glitch' filter in ASCII mode
+  if (colorFilter === "glitch" && renderMode === "ascii") {
+    applyCRTPattern(outputCtx, outputCanvas.width, outputCanvas.height);
+  }
 
   // Clean up
   tempCanvas.remove();
+};
+
+// Add CRT pattern effect
+const applyCRTPattern = (
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number
+) => {
+  const imageData = ctx.getImageData(0, 0, width, height);
+  const data = imageData.data;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = (y * width + x) * 4;
+      if (x % 2 === 0) {
+        data[idx] *= 0.9; // Slightly dim every other pixel for CRT effect
+        data[idx + 1] *= 0.9;
+        data[idx + 2] *= 0.9;
+      }
+    }
+  }
+  ctx.putImageData(imageData, 0, 0);
 };
 
 // AsciiCanvas component renders ASCII art from an image and supports zoom & pan
@@ -503,6 +883,7 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     useState<BackgroundColor>("black");
   const [customBgColor, setCustomBgColor] = useState<string>("#333333");
   const [bgModalOpen, setBgModalOpen] = useState(false);
+  const [renderMode, setRenderMode] = useState<RenderMode>("ascii");
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
@@ -744,7 +1125,8 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
       asciiChars,
       canvasRef.current,
       renderOptions,
-      actualBackgroundColor
+      actualBackgroundColor,
+      renderMode
     );
   }, [
     size,
@@ -753,6 +1135,7 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     renderOptions,
     backgroundColor,
     customBgColor,
+    renderMode,
   ]);
 
   // Load image and render ASCII art
@@ -1340,57 +1723,96 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
             {/* Left section: Import/Export & Character Set */}
             <div className="space-y-2">
-              <div className="flex space-x-2">
-                <label
-                  htmlFor="imageUpload"
-                  className="px-2 py-1 bg-blue-600 hover:bg-blue-700 cursor-pointer text-white rounded text-center text-xs flex-1"
-                  onClick={handleFileInputClick}
-                >
-                  Upload Image
+              <div className="flex items-center space-x-1">
+                <label className="text-gray-400 text-xs w-16 opacity-0">
+                  Hidden:
                 </label>
-                <button
-                  onClick={handleControlClick(handleExportClick)}
-                  className={`px-2 py-1 ${
-                    image
-                      ? "bg-green-600 hover:bg-green-700"
-                      : "bg-gray-600 opacity-50 cursor-not-allowed"
-                  } text-white rounded text-xs flex-1`}
-                  title={image ? "Export as Image" : "Load an image first"}
-                  disabled={!image}
-                >
-                  Export
-                </button>
-                <input
-                  id="imageUpload"
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => {
-                    handleImageUpload(e);
-                    setTimeout(returnFocusToCanvas, 0);
-                  }}
-                  className="hidden"
-                />
+                <div className="flex-1 flex space-x-2">
+                  <label
+                    htmlFor="imageUpload"
+                    className="flex-1 px-2 py-1.5 bg-blue-600 hover:bg-blue-700 cursor-pointer text-white rounded text-center text-xs"
+                    onClick={handleFileInputClick}
+                  >
+                    Upload Image
+                  </label>
+                  <button
+                    onClick={handleControlClick(handleExportClick)}
+                    className={`flex-1 px-2 py-1.5 ${
+                      image
+                        ? "bg-green-600 hover:bg-green-700"
+                        : "bg-gray-600 opacity-50 cursor-not-allowed"
+                    } text-white rounded text-xs`}
+                    title={image ? "Export as Image" : "Load an image first"}
+                    disabled={!image}
+                  >
+                    Export
+                  </button>
+                  <input
+                    id="imageUpload"
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      handleImageUpload(e);
+                      setTimeout(returnFocusToCanvas, 0);
+                    }}
+                    className="hidden"
+                  />
+                </div>
               </div>
 
-              {/* Character Set */}
+              {/* Render Mode Toggle */}
               <div className="flex items-center space-x-1">
-                <label className="text-gray-400 text-xs w-16">Char Set:</label>
-                <select
-                  value={characterSet}
-                  onChange={(e) => {
-                    setCharacterSet(e.target.value as CharacterSet);
-                    setTimeout(returnFocusToCanvas, 0);
-                  }}
-                  className="bg-gray-800 text-white rounded border border-gray-700 text-xs p-0.5 flex-1"
-                  onBlur={returnFocusToCanvas}
-                >
-                  {Object.keys(ASCII_PRESETS).map((preset) => (
-                    <option key={preset} value={preset}>
-                      {preset.charAt(0).toUpperCase() + preset.slice(1)}
-                    </option>
-                  ))}
-                </select>
+                <label className="text-gray-400 text-xs w-16">Mode:</label>
+                <div className="flex-1 flex rounded overflow-hidden border border-gray-700">
+                  <button
+                    onClick={() => {
+                      setRenderMode("ascii");
+                      setTimeout(returnFocusToCanvas, 0);
+                    }}
+                    className={`flex-1 text-xs py-1.5 px-2 transition-colors ${
+                      renderMode === "ascii"
+                        ? "bg-blue-600 text-white"
+                        : "bg-gray-800 text-gray-300 hover:bg-gray-700"
+                    }`}
+                  >
+                    Text
+                  </button>
+                  <button
+                    onClick={() => {
+                      setRenderMode("emoji");
+                      setTimeout(returnFocusToCanvas, 0);
+                    }}
+                    className={`flex-1 text-xs py-1.5 px-2 transition-colors ${
+                      renderMode === "emoji"
+                        ? "bg-blue-600 text-white"
+                        : "bg-gray-800 text-gray-300 hover:bg-gray-700"
+                    }`}
+                  >
+                    Emoji 🎨
+                  </button>
+                </div>
               </div>
+
+              {/* Character Set - only show when in ASCII mode with simplified options */}
+              {renderMode === "ascii" && (
+                <div className="flex items-center space-x-1">
+                  <label className="text-gray-400 text-xs w-16">
+                    Characters:
+                  </label>
+                  <select
+                    value={characterSet}
+                    onChange={(e) => {
+                      setCharacterSet(e.target.value as CharacterSet);
+                      setTimeout(returnFocusToCanvas, 0);
+                    }}
+                    className="bg-gray-800 text-white rounded border border-gray-700 text-xs p-0.5 flex-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="default">Default</option>
+                    <option value="simple">Simple</option>
+                    <option value="blocks">Blocks</option>
+                  </select>
+                </div>
+              )}
 
               {/* Color Filter Dropdown - Updated with removed options */}
               <div className="flex items-center space-x-1">
