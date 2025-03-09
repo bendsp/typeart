@@ -53,6 +53,9 @@ type ColorFilter =
   | "cyberpunk" // Two-tone cyberpunk gradient
   | "retrowave"; // Bold retro color scheme
 
+// Define background color type
+type BackgroundColor = "black" | "white" | "custom";
+
 interface AsciiCanvasProps {
   initialImage?: string | null;
   initialSize?: number;
@@ -141,7 +144,8 @@ const drawAscii = (
   colorFilter: ColorFilter,
   characterSet: string,
   outputCanvas: HTMLCanvasElement,
-  options: AsciiRenderOptions = { brightness: 0, contrast: 0, invert: false }
+  options: AsciiRenderOptions = { brightness: 0, contrast: 0, invert: false },
+  backgroundColor: BackgroundColor | string = "black" // Allow string to accept custom colors
 ) => {
   const aspectRatio = image.width / image.height;
   const width = size;
@@ -207,16 +211,9 @@ const drawAscii = (
   outputCtx.font = `bold ${CHAR_HEIGHT}px monospace`;
   outputCtx.textBaseline = "top";
 
-  // Set background color based on color filter
-  if (
-    colorFilter === "matrix" ||
-    colorFilter === "blueprint" ||
-    colorFilter === "cyberpunk" ||
-    colorFilter === "retrowave"
-  ) {
-    outputCtx.fillStyle = "rgb(0, 0, 0)";
-    outputCtx.fillRect(0, 0, outputCanvas.width, outputCanvas.height);
-  }
+  // Set canvas background based on backgroundColor
+  outputCtx.fillStyle = backgroundColor; // This will work with both named colors and hex values
+  outputCtx.fillRect(0, 0, outputCanvas.width, outputCanvas.height);
 
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
@@ -502,6 +499,10 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     useState<ColorFilter>(initialColorFilter);
   const [characterSet, setCharacterSet] =
     useState<CharacterSet>(initialCharacterSet);
+  const [backgroundColor, setBackgroundColor] =
+    useState<BackgroundColor>("black");
+  const [customBgColor, setCustomBgColor] = useState<string>("#333333");
+  const [bgModalOpen, setBgModalOpen] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
@@ -584,29 +585,46 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     return resolutions;
   }, []);
 
+  // Get the actual background color value based on the selected type
+  const getBackgroundColorValue = useCallback(
+    (bgType: BackgroundColor): string => {
+      switch (bgType) {
+        case "custom":
+          return customBgColor;
+        default:
+          return bgType;
+      }
+    },
+    [customBgColor]
+  );
+
   // Export the ASCII art as an image with the selected size and filename
   const exportAsImage = useCallback(
-    (sizeScale: number, filename: string, format: ExportFormat) => {
+    async (sizeScale: number, filename: string, format: ExportFormat) => {
       if (!canvasRef.current) return;
 
       try {
-        // Create a temporary canvas for the export with reduced resolution
-        const exportCanvas = document.createElement("canvas");
         const originalCanvas = canvasRef.current;
+        const originalWidth = originalCanvas.width;
+        const originalHeight = originalCanvas.height;
 
-        // Use the selected size scale
-        const exportWidth = Math.floor(originalCanvas.width * sizeScale);
-        const exportHeight = Math.floor(originalCanvas.height * sizeScale);
+        // Calculate export dimensions, preserving aspect ratio
+        const exportWidth = originalWidth * sizeScale;
+        const exportHeight = originalHeight * sizeScale;
 
+        // Create a new canvas for the export
+        const exportCanvas = document.createElement("canvas");
         exportCanvas.width = exportWidth;
         exportCanvas.height = exportHeight;
 
-        // Get context and set black background
-        const exportCtx = exportCanvas.getContext("2d", { alpha: false });
+        // Get context and set background
+        const exportCtx = exportCanvas.getContext("2d");
         if (!exportCtx) return;
 
-        // Fill with black background
-        exportCtx.fillStyle = "black";
+        // Get the actual background color for both named and custom colors
+        const actualColor =
+          backgroundColor === "custom" ? customBgColor : backgroundColor;
+        exportCtx.fillStyle = actualColor;
         exportCtx.fillRect(0, 0, exportWidth, exportHeight);
 
         // Draw the original canvas content onto the export canvas
@@ -630,7 +648,7 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
         }
       }
     },
-    [onError]
+    [onError, backgroundColor, customBgColor]
   );
 
   // Handle export button click - show dialog instead of exporting directly
@@ -714,15 +732,28 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
   // Render the ASCII art with current options
   const renderAsciiArt = useCallback(() => {
     if (!imageRef.current || !canvasRef.current) return;
+
+    // Pass the actual color value, not just the type
+    const actualBackgroundColor =
+      backgroundColor === "custom" ? customBgColor : backgroundColor;
+
     drawAscii(
       imageRef.current,
       size,
       colorFilter,
       asciiChars,
       canvasRef.current,
-      renderOptions
+      renderOptions,
+      actualBackgroundColor
     );
-  }, [size, colorFilter, asciiChars, renderOptions]);
+  }, [
+    size,
+    colorFilter,
+    asciiChars,
+    renderOptions,
+    backgroundColor,
+    customBgColor,
+  ]);
 
   // Load image and render ASCII art
   useEffect(() => {
@@ -1114,6 +1145,119 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     }
   }, []);
 
+  // Redraw canvas on background color change
+  useEffect(() => {
+    if (imageRef.current && canvasRef.current && !loading) {
+      renderAsciiArt();
+    }
+  }, [backgroundColor, customBgColor, renderAsciiArt, loading]);
+
+  // Background color modal component with improved UI
+  const BackgroundColorModal = () => {
+    if (!bgModalOpen) return null;
+
+    // Local state for color picker to prevent immediate updates while selecting
+    const [tempCustomColor, setTempCustomColor] = useState(customBgColor);
+
+    const applyCustomColor = () => {
+      setCustomBgColor(tempCustomColor);
+      setBackgroundColor("custom");
+      setBgModalOpen(false);
+    };
+
+    return (
+      <div
+        className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50"
+        onClick={() => setBgModalOpen(false)}
+      >
+        <div
+          className="bg-gray-800 rounded-lg p-5 shadow-lg max-w-sm w-full text-white"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <h3 className="text-lg font-medium mb-4">Background Color</h3>
+          <div className="space-y-3">
+            {/* Standard color options */}
+            <div className="flex space-x-3 mb-4">
+              <button
+                className={`flex-1 py-2 px-3 rounded-md flex items-center justify-center ${
+                  backgroundColor === "black"
+                    ? "bg-blue-600 ring-2 ring-blue-400"
+                    : "bg-gray-700 hover:bg-gray-600"
+                }`}
+                onClick={() => {
+                  setBackgroundColor("black");
+                  setBgModalOpen(false);
+                }}
+              >
+                <div className="w-4 h-4 bg-black border border-gray-500 rounded-full mr-2"></div>
+                <span>Black</span>
+              </button>
+
+              <button
+                className={`flex-1 py-2 px-3 rounded-md flex items-center justify-center ${
+                  backgroundColor === "white"
+                    ? "bg-blue-600 ring-2 ring-blue-400"
+                    : "bg-gray-700 hover:bg-gray-600"
+                }`}
+                onClick={() => {
+                  setBackgroundColor("white");
+                  setBgModalOpen(false);
+                }}
+              >
+                <div className="w-4 h-4 bg-white border border-gray-500 rounded-full mr-2"></div>
+                <span>White</span>
+              </button>
+            </div>
+
+            {/* Custom color section */}
+            <div
+              className={`p-4 rounded-md ${
+                backgroundColor === "custom"
+                  ? "bg-gray-700 ring-2 ring-blue-500"
+                  : "bg-gray-700"
+              }`}
+            >
+              <div className="flex items-center mb-3">
+                <div
+                  className="w-8 h-8 rounded-full border-2 border-white mr-3"
+                  style={{ backgroundColor: tempCustomColor }}
+                ></div>
+                <span className="font-medium">Custom Color</span>
+              </div>
+
+              <div className="bg-gray-900 p-3 rounded-md">
+                <input
+                  type="color"
+                  value={tempCustomColor}
+                  onChange={(e) => setTempCustomColor(e.target.value)}
+                  className="w-full h-10 cursor-pointer rounded mb-3"
+                />
+                <div className="text-xs text-gray-400 mb-1">
+                  Hex: {tempCustomColor}
+                </div>
+                <button
+                  onClick={applyCustomColor}
+                  className="w-full mt-2 bg-blue-600 hover:bg-blue-700 text-white py-2 px-3 rounded-md font-medium transition-colors"
+                >
+                  Apply Custom Color
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 flex justify-end">
+            <button
+              className="bg-gray-700 hover:bg-gray-600 text-white py-1.5 px-3 rounded"
+              onClick={() => setBgModalOpen(false)}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="flex flex-col h-full w-full" ref={mainContainerRef}>
       {/* Minimized Control Bar - Increased size */}
@@ -1336,6 +1480,30 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
                 </span>
               </div>
             </div>
+
+            {/* Background color button - updated design */}
+            <div className="flex items-center space-x-1">
+              <label className="text-gray-400 text-xs w-16">Background:</label>
+              <button
+                onClick={() => setBgModalOpen(true)}
+                className="flex-1 p-1.5 bg-gray-800 hover:bg-gray-700 text-white rounded border border-gray-700 text-xs flex items-center justify-between transition-colors"
+              >
+                <span>
+                  {backgroundColor === "custom"
+                    ? "Custom"
+                    : backgroundColor.charAt(0).toUpperCase() +
+                      backgroundColor.slice(1)}
+                </span>
+                <div
+                  className="w-4 h-4 rounded-full border border-gray-500"
+                  style={
+                    backgroundColor === "custom"
+                      ? { backgroundColor: customBgColor }
+                      : { backgroundColor }
+                  }
+                ></div>
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1422,6 +1590,9 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
           </div>
         </div>
       )}
+
+      {/* Background color modal */}
+      <BackgroundColorModal />
 
       {/* Main Canvas Container */}
       <div
