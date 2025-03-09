@@ -47,7 +47,7 @@ type ColorFilter =
   | "matrix" // Green on black Matrix style
   | "hell" // Hell style (fiery reds and oranges)
   | "blueprint" // Technical drawing blue and white
-  | "thermal" // Heat map visualization style
+  | "@basedanarki vision (heat)" // Heat map visualization style
   | "rainbow" // Old neon effect with rainbow colors
   | "glitch" // Digital glitch effect
   | "cyberpunk" // Two-tone cyberpunk gradient
@@ -285,7 +285,7 @@ const drawAscii = (
             bpValue * bpBrightness
           }, ${100 + bpBrightness * 155})`;
           break;
-        case "thermal":
+        case "@basedanarki vision (heat)":
           // Adjusted Thermal imaging heat map
           const heatLevel = brightness / 255;
           if (heatLevel > 0.75) {
@@ -1268,7 +1268,9 @@ const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
                   <option value="hell">Hell</option>
                   <option value="blueprint">Blueprint</option>
                   <option value="retrowave">Retrowave</option>
-                  <option value="thermal">Thermal</option>
+                  <option value="@basedanarki vision (heat)">
+                    @basedanarki vision (heat)
+                  </option>
                   <option value="rainbow">Rainbow</option>
                   <option value="glitch">Glitch</option>
                 </select>
